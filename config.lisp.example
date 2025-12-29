@@ -1,0 +1,78 @@
+;;;; cl-llm-provider configuration file
+;;;;
+;;;; Copy this file to ~/.config/cl-llm-provider/config.lisp
+;;;; and fill in your API keys.
+;;;;
+;;;; Then load it with: (cl-llm-provider:load-configuration)
+
+;;; Provider API Keys
+;;; -----------------
+
+;; Anthropic (Claude models)
+;; Get your key from: https://console.anthropic.com/
+(setf (uiop:getenv "ANTHROPIC_API_KEY") "sk-ant-your-key-here")
+
+;; OpenAI (GPT models)
+;; Get your key from: https://platform.openai.com/api-keys
+(setf (uiop:getenv "OPENAI_API_KEY") "sk-your-key-here")
+
+;; OpenRouter (multi-provider gateway)
+;; Get your key from: https://openrouter.ai/keys
+(setf (uiop:getenv "OPENROUTER_API_KEY") "sk-or-your-key-here")
+
+;; Ollama (local models)
+;; Custom Ollama endpoint if not using default localhost:11434
+;; (setf (uiop:getenv "OLLAMA_BASE_URL") "http://localhost:11434")
+
+
+;;; OpenAI-Compatible Providers
+;;; ----------------------------
+
+;; Groq
+;; Get your key from: https://console.groq.com/keys
+;; (setf (uiop:getenv "GROQ_API_KEY") "gsk-your-key-here")
+
+;; Together AI
+;; Get your key from: https://api.together.xyz/settings/api-keys
+;; (setf (uiop:getenv "TOGETHER_API_KEY") "your-key-here")
+
+
+;;; Default Configuration (Optional)
+;;; ---------------------------------
+
+;; You can also set defaults directly (instead of using environment variables)
+
+;; Default provider
+;; (setf cl-llm-provider:*default-provider*
+;;       (cl-llm-provider:make-provider :anthropic
+;;                                       :model "claude-3-sonnet-20240229"))
+
+;; Or just set the model
+;; (setf cl-llm-provider:*default-model* "claude-3-sonnet-20240229")
+
+;; Default parameters
+;; (setf cl-llm-provider:*default-max-tokens* 2048)
+;; (setf cl-llm-provider:*default-temperature* 0.7)
+
+
+;;; Advanced: Run arbitrary Lisp code
+;;; ----------------------------------
+
+;; Since this is a Lisp file, you can do anything:
+
+;; Load provider based on time of day
+;; (setf cl-llm-provider:*default-provider*
+;;       (if (< (get-decoded-time) 12)
+;;           (cl-llm-provider:make-provider :ollama :model "llama3")  ; Use local in morning
+;;           (cl-llm-provider:make-provider :anthropic)))             ; Use cloud in afternoon
+
+;; Load different keys based on environment
+;; (let ((env (uiop:getenv "APP_ENV")))
+;;   (cond
+;;     ((string= env "production")
+;;      (setf (uiop:getenv "ANTHROPIC_API_KEY") "sk-production-key"))
+;;     ((string= env "development")
+;;      (setf (uiop:getenv "ANTHROPIC_API_KEY") "sk-dev-key"))))
+
+;; Print a message when config is loaded
+;; (format t "~&cl-llm-provider configuration loaded!~%")

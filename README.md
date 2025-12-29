@@ -16,12 +16,16 @@ Unified Common Lisp interface for multiple LLM provider APIs (text completion an
 - **OpenAI-compatible APIs** (Groq, Together AI, local vLLM, etc.)
 
 **Features:**
-- Unified API for text completion and embeddings
-- Tool/function calling with automatic schema translation
-- Configuration via Lisp config file (`~/.config/cl-llm-provider/config.lisp`)
-- Global defaults with per-request overrides
-- Comprehensive condition system with restarts
-- Thread-safe design
+- **Unified API** - Single interface for text completion and embeddings across all providers
+- **Tool/Function Calling** - Automatic schema translation across provider formats (OpenAI, Anthropic, Ollama)
+- **Token Counting** - Accurate token usage tracking for prompt and completion tokens
+- **Provider Metadata** - Access provider-specific data (fingerprints, timestamps, reasoning traces)
+- **Performance Profiling** - Optional timing data for encode/API/decode phases
+- **Error Handling** - Comprehensive condition system with restarts for graceful error recovery
+- **Configuration** - Via Lisp config file with global defaults and per-request overrides
+- **Multi-Provider** - Switch providers with single parameter change
+- **Thread-Safe** - Safe for concurrent requests
+- **Message Normalization** - Automatic conversion across provider message formats
 
 ## Installation
 
@@ -250,35 +254,61 @@ You can do anything in the Lisp config file since it's just Lisp code:
 
 ### Core Functions
 
-- `make-provider` - Create a provider instance
-- `complete` - Send a completion request
-- `embedding` - Generate vector embeddings
-- `define-tool` - Create a tool definition
-- `tool-calls` - Extract tool calls from response
-- `make-tool-result` - Create tool result message
+**Completion & Chat**
+- `complete(messages &key provider model max-tokens temperature system tools tool-choice)` - Send a completion request with optional tools
+- `embedding(input &key provider model dimensions)` - Generate vector embeddings
 
-### Configuration
+**Provider Management**
+- `make-provider(type &key api-key base-url model options)` - Create a provider instance
+- `load-configuration()` - Load provider configuration from config file
+- `configure-defaults(&key provider model temperature max-tokens)` - Set global defaults
 
-- `load-configuration` - Load from config.lisp file
-- `configure-defaults` - Set global defaults
-- `*default-provider*` - Default provider
-- `*default-model*` - Default model
-- `*default-max-tokens*` - Default max tokens
-- `*default-temperature*` - Default temperature
+**Tool Support**
+- `define-tool(name description parameters &key required)` - Create a tool definition
+- `make-instance 'tool-definition` - Create tool programmatically
+- `make-tool-result(call-id content &key is-error)` - Create tool result message
+
+**Response Access**
+- `response-content(response)` - Get text content from response
+- `response-embeddings(response)` - Get embedding vectors
+- `response-usage(response)` - Get token usage (:prompt-tokens, :completion-tokens, :total-tokens)
+- `response-metadata(response)` - Get provider-specific metadata
+- `response-tool-calls(response)` - Get tool calls from response
+- `response-finish-reason(response)` - Get completion reason (:stop, :length, :tool-calls)
+- `response-performance(response)` - Get timing data (when profiling enabled)
+
+**Tool Access**
+- `tool-name(tool)` - Get tool name
+- `tool-description(tool)` - Get tool description
+- `tool-parameters(tool)` - Get tool parameters list
+- `tool-required-params(tool)` - Get required parameter names
+- `tool-call-id(call)` - Get tool call ID
+- `tool-call-name(call)` - Get tool call name
+- `tool-call-arguments(call)` - Get tool call arguments (plist)
+
+### Configuration Variables
+
+- `*default-provider*` - Default provider instance
+- `*default-model*` - Default model name
+- `*default-temperature*` - Default temperature (0-2, default 1.0)
+- `*default-max-tokens*` - Default max tokens limit
+- `*performance-profiling*` - Enable timing data (default nil)
 
 ### Macros
 
-- `with-provider` - Execute with specific provider
-- `with-model` - Execute with specific model
+- `with-provider(provider &body)` - Execute with specific provider
+- `with-model(model &body)` - Execute with specific model
+- `with-temperature(temp &body)` - Execute with specific temperature
 
-### Conditions
+### Condition Types
 
-- `llm-provider-error` - Base error
-- `provider-configuration-error` - Missing config
-- `provider-api-error` - API request failed
-- `provider-rate-limit-error` - Rate limited
-- `provider-authentication-error` - Auth failed
-- `tool-schema-error` - Invalid tool definition
+**Error Hierarchy**
+- `llm-provider-error` - Base error for all provider errors
+  - `provider-configuration-error` - Missing or invalid config (missing-key)
+  - `provider-api-error` - API request failed (status-code, body)
+    - `provider-rate-limit-error` - Rate limited (retry-after)
+    - `provider-authentication-error` - Authentication failed
+  - `tool-schema-error` - Invalid tool definition (tool, reason)
 
 ## Architecture
 
@@ -315,9 +345,57 @@ The following features are explicitly deferred to future versions:
 
 ## Testing
 
-```lisp
-(asdf:test-system :cl-llm-provider)
+The library includes comprehensive test suites with 423 total checks, all passing:
+
+### Test Suites
+
+1. **Token Counting and Metadata** (59 checks)
+   - Token counting across all providers
+   - Provider-specific metadata extraction
+   - Performance profiling integration
+   - Thinking mode support (reasoning models)
+   - Embedding response handling
+
+2. **Provider Protocols and Request/Response** (239 checks)
+   - Provider initialization and type hierarchy
+   - Message normalization across formats
+   - Tool definition and schema translation
+   - Response parsing and normalization
+   - Error handling and recovery
+   - Configuration and defaults
+
+3. **Tools Support** (125 checks)
+   - Tool definition and validation
+   - All parameter types (string, integer, number, boolean, array, object)
+   - Tool call creation and execution
+   - Tool result processing
+   - Conversation flows with tools
+   - Provider-specific tool format translation
+   - Multi-turn tool conversations
+
+### Running Tests
+
+```bash
+# Run specific test suite
+sbcl --noinform --non-interactive --load tests/test-tools-support.lisp
+
+# Or run token/metadata tests
+sbcl --noinform --non-interactive --load tests/test-token-metadata-comprehensive.lisp
+
+# Or run provider protocol tests
+sbcl --noinform --non-interactive --load tests/test-provider-protocols.lisp
 ```
+
+See `tests/README.md` and `tests/test-*-README.md` for complete documentation.
+
+## Documentation
+
+Comprehensive documentation is available in the `docs/` folder:
+
+- **[docs/PROTOCOL.md](docs/PROTOCOL.md)** - Protocol architecture and generic functions
+- **[docs/PROVIDERS.md](docs/PROVIDERS.md)** - Implementation guide for adding new providers
+- **[docs/FEATURES.md](docs/FEATURES.md)** - Detailed feature documentation
+- **[docs/examples/CHAT_WITH_TOOLS.md](docs/examples/CHAT_WITH_TOOLS.md)** - Complete chat session example with tools
 
 ## License
 

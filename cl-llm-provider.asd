@@ -29,6 +29,18 @@
                  (:file "config" :depends-on ("package" "conditions"))
                  (:file "protocol" :depends-on ("package" "types" "conditions"))
                  (:file "tools" :depends-on ("package" "types" "conditions"))
+                 ;; Enhanced tools module (registry, validators, approval, hooks, execution)
+                 (:module "tools-enhanced"
+                  :pathname "tools"
+                  :depends-on ("package" "types" "conditions" "tools")
+                  :components
+                  ((:file "package")
+                   (:file "categories" :depends-on ("package"))
+                   (:file "validators" :depends-on ("package" "categories"))
+                   (:file "registry" :depends-on ("package" "categories" "validators"))
+                   (:file "approval" :depends-on ("package" "categories" "registry"))
+                   (:file "hooks" :depends-on ("package"))
+                   (:file "execution" :depends-on ("package" "categories" "validators" "registry" "approval" "hooks"))))
                  (:module "providers"
                   :depends-on ("package" "types" "conditions" "protocol" "tools")
                   :components

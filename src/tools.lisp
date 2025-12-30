@@ -2,7 +2,17 @@
 
 ;;;; Tool Calling Support
 
-(defun define-tool (name description parameters &key required)
+(defun define-tool (name description parameters
+                    &key required
+                         safety-level
+                         categories
+                         requires-approval
+                         parameter-validators
+                         on-start
+                         on-complete
+                         on-error
+                         handler
+                         metadata)
   "Create a tool definition that can be passed to complete.
 
 NAME - Tool/function name (string)
@@ -13,6 +23,20 @@ PARAMETERS - Parameter specifications as plists, each with:
   :description - Parameter description (string)
   :enum - Optional list of allowed values
 REQUIRED - List of required parameter names (list of strings)
+
+ENHANCED OPTIONS:
+SAFETY-LEVEL - :safe (default), :moderate, or :dangerous
+CATEGORIES - List of category keywords (e.g., '(:search :database))
+REQUIRES-APPROVAL - NIL, T, :always, or :if-dangerous
+PARAMETER-VALIDATORS - Alist of (param-name . validator) where validator is:
+  - A function: (lambda (value) t-or-nil)
+  - A spec plist: (:type :integer :min 0 :max 100)
+  - A named validator: :positive-integer, :email, etc.
+ON-START - Hook function (lambda (tool-call arguments) ...)
+ON-COMPLETE - Hook function (lambda (tool-call arguments result) ...)
+ON-ERROR - Hook function (lambda (tool-call arguments condition) ...)
+HANDLER - Execution function (lambda (arguments) ...)
+METADATA - Plist of additional metadata (version, author, etc.)
 
 Returns a tool-definition object.
 
@@ -26,12 +50,32 @@ Example:
        :type :string
        :enum (\"celsius\" \"fahrenheit\")
        :description \"Temperature unit\"))
-    :required '(\"location\"))"
+    :required '(\"location\"))
+
+Enhanced example:
+  (define-tool \"delete_file\"
+    \"Delete a file from the filesystem\"
+    '((:name \"path\" :type :string :description \"File path\"))
+    :required '(\"path\")
+    :safety-level :dangerous
+    :categories '(:filesystem :destructive)
+    :requires-approval :always
+    :parameter-validators '((\"path\" . (:pattern \"^/tmp/\")))
+    :handler (lambda (args) (delete-file (getf args :path))))"
   (make-instance 'tool-definition
                  :name name
                  :description description
                  :parameters parameters
-                 :required required))
+                 :required required
+                 :safety-level (or safety-level :safe)
+                 :categories categories
+                 :requires-approval requires-approval
+                 :parameter-validators parameter-validators
+                 :on-start on-start
+                 :on-complete on-complete
+                 :on-error on-error
+                 :handler handler
+                 :metadata metadata))
 
 (defun tool-calls (response)
   "Extract tool calls from a completion response.

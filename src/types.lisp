@@ -136,7 +136,57 @@
    (required :initarg :required
              :initform nil
              :reader tool-required-params
-             :documentation "List of required parameter names."))
+             :documentation "List of required parameter names.")
+   ;; NEW: Safety and categorization
+   (safety-level :initarg :safety-level
+                 :initform :safe
+                 :accessor tool-safety-level
+                 :documentation "Safety classification: :safe (no side effects),
+                                :moderate (reversible side effects),
+                                :dangerous (irreversible/sensitive operations).")
+   (categories :initarg :categories
+               :initform nil
+               :accessor tool-categories
+               :documentation "List of category keywords for classification
+                              (e.g., :search, :database, :filesystem, :network).")
+   ;; NEW: Approval system
+   (requires-approval :initarg :requires-approval
+                      :initform nil
+                      :accessor tool-requires-approval
+                      :documentation "Whether tool requires human approval before execution.
+                                     NIL = no approval, T/:always = always require,
+                                     :if-dangerous = require only if safety-level is :dangerous.")
+   ;; NEW: Parameter validation
+   (parameter-validators :initarg :parameter-validators
+                         :initform nil
+                         :accessor tool-parameter-validators
+                         :documentation "Alist mapping parameter names to validator functions or specs.
+                                        Each validator is either a function (lambda (value) ...)
+                                        or a validator spec plist like (:type :integer :min 0 :max 100).")
+   ;; NEW: Lifecycle hooks
+   (on-start :initarg :on-start
+             :initform nil
+             :accessor tool-on-start
+             :documentation "Function called before tool execution: (lambda (tool-call arguments) ...)")
+   (on-complete :initarg :on-complete
+                :initform nil
+                :accessor tool-on-complete
+                :documentation "Function called after successful execution: (lambda (tool-call arguments result) ...)")
+   (on-error :initarg :on-error
+             :initform nil
+             :accessor tool-on-error
+             :documentation "Function called on execution failure: (lambda (tool-call arguments condition) ...)")
+   ;; NEW: Execution handler
+   (handler :initarg :handler
+            :initform nil
+            :accessor tool-handler
+            :documentation "Optional function to execute the tool: (lambda (arguments) ...).
+                           Enables automatic tool execution when provided.")
+   ;; NEW: Metadata
+   (metadata :initarg :metadata
+             :initform nil
+             :accessor tool-metadata
+             :documentation "Plist of additional metadata (version, author, documentation-url, etc.)."))
   (:documentation "Represents a tool that can be called by the LLM."))
 
 (defmethod print-object ((tool tool-definition) stream)

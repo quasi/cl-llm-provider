@@ -122,3 +122,94 @@
                        (ignore-errors (tool-name (error-tool c))))
                      (or (error-reason c)
                          (error-message c))))))
+
+;;;; Enhanced Tool Conditions
+
+(define-condition tool-validation-error (llm-provider-error)
+  ((tool :initarg :tool
+         :initform nil
+         :reader error-tool
+         :documentation "The tool definition.")
+   (parameter :initarg :parameter
+              :initform nil
+              :reader error-parameter
+              :documentation "Name of the parameter that failed validation.")
+   (value :initarg :value
+          :initform nil
+          :reader error-value
+          :documentation "The value that failed validation.")
+   (validator :initarg :validator
+              :initform nil
+              :reader error-validator
+              :documentation "The validator that failed.")
+   (reason :initarg :reason
+           :initform nil
+           :reader error-reason
+           :documentation "Human-readable reason for failure."))
+  (:documentation "Signaled when parameter validation fails.")
+  (:report (lambda (c s)
+             (format s "Parameter validation failed~@[ for ~A~].~A: ~S~@[ - ~A~]"
+                     (when (error-tool c)
+                       (ignore-errors (tool-name (error-tool c))))
+                     (or (error-parameter c) "?")
+                     (error-value c)
+                     (error-reason c)))))
+
+(define-condition tool-approval-error (llm-provider-error)
+  ((tool-call :initarg :tool-call
+              :initform nil
+              :reader error-tool-call
+              :documentation "The tool call that was rejected.")
+   (tool :initarg :tool
+         :initform nil
+         :reader error-tool
+         :documentation "The tool definition.")
+   (reason :initarg :reason
+           :initform nil
+           :reader error-reason
+           :documentation "Reason for rejection."))
+  (:documentation "Signaled when tool execution is rejected during approval.")
+  (:report (lambda (c s)
+             (format s "Tool execution rejected~@[ for ~A~]~@[: ~A~]"
+                     (when (error-tool-call c)
+                       (ignore-errors (tool-call-name (error-tool-call c))))
+                     (error-reason c)))))
+
+(define-condition tool-approval-required (llm-provider-error)
+  ((tool-call :initarg :tool-call
+              :initform nil
+              :reader error-tool-call
+              :documentation "The tool call requiring approval.")
+   (tool :initarg :tool
+         :initform nil
+         :reader error-tool
+         :documentation "The tool definition."))
+  (:documentation "Signaled when approval is required but no callback is configured.")
+  (:report (lambda (c s)
+             (format s "Tool ~A requires approval but no approval callback configured"
+                     (if (error-tool-call c)
+                         (ignore-errors (tool-call-name (error-tool-call c)))
+                         (if (error-tool c)
+                             (ignore-errors (tool-name (error-tool c)))
+                             "?"))))))
+
+(define-condition tool-safety-violation (llm-provider-error)
+  ((tool :initarg :tool
+         :initform nil
+         :reader error-tool
+         :documentation "The tool that violated safety constraints.")
+   (required-level :initarg :required-level
+                   :initform nil
+                   :reader error-required-level
+                   :documentation "Maximum allowed safety level.")
+   (actual-level :initarg :actual-level
+                 :initform nil
+                 :reader error-actual-level
+                 :documentation "Actual safety level of the tool."))
+  (:documentation "Signaled when attempting to use a tool that exceeds safety restrictions.")
+  (:report (lambda (c s)
+             (format s "Safety violation: tool ~A has level ~A but ~A or lower required"
+                     (when (error-tool c)
+                       (ignore-errors (tool-name (error-tool c))))
+                     (error-actual-level c)
+                     (error-required-level c)))))

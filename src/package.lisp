@@ -83,6 +83,16 @@
    #:tool-description
    #:tool-parameters
    #:tool-required-params
+   ;; Enhanced tool accessors
+   #:tool-safety-level
+   #:tool-categories
+   #:tool-requires-approval
+   #:tool-parameter-validators
+   #:tool-on-start
+   #:tool-on-complete
+   #:tool-on-error
+   #:tool-handler
+   #:tool-metadata
 
    #:tool-call
    #:tool-call-id
@@ -110,6 +120,20 @@
    #:error-tool
    #:error-reason
 
+   ;; Enhanced tool conditions
+   #:tool-validation-error
+   #:error-parameter
+   #:error-value
+   #:error-validator
+
+   #:tool-approval-error
+   #:tool-approval-required
+   #:error-tool-call
+
+   #:tool-safety-violation
+   #:error-required-level
+   #:error-actual-level
+
    ;; Protocol (for extensibility)
    #:send-completion-request
    #:parse-completion-response
@@ -118,4 +142,11 @@
    #:provider-default-base-url
    #:provider-api-key-env-var
    #:translate-tool-to-provider
-   #:parse-tool-calls))
+   #:parse-tool-calls
+
+   ;; Enhanced tools module (re-exported from cl-llm-provider.tools)
+   ;; See cl-llm-provider.tools package for additional exports
+
+   ;; Tool validation
+   #:validate-tools
+   #:validate-tool-definition))

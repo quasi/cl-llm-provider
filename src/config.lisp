@@ -14,33 +14,52 @@
 (defvar *default-temperature* 1.0
   "Default temperature when not specified.")
 
-;;;; Configuration Loading
+;;;; Configuration File Path
 
-(defun default-config-path ()
-  "Return the default configuration file path."
+(defconstant +default-config-file-path+
   (merge-pathnames "cl-llm-provider/config.lisp"
-                   (uiop:xdg-config-home)))
+                   (uiop:xdg-config-home))
+  "Default path for configuration file.
 
-(defun load-configuration (&key config-file verbose)
-  "Load configuration from a Lisp configuration file.
+   This is a SUGGESTED path only - the library never loads this automatically.
+   Users can pass any path to load-configuration-from-file, or set API keys
+   directly via make-provider or environment variables.")
 
-CONFIG-FILE - Path to config.lisp (defaults to ~/.config/cl-llm-provider/config.lisp)
-VERBOSE - If true, print loading progress (default: NIL)
+;;;; Configuration Loading (Opt-In Only)
 
-The configuration file should set environment variables like:
-  (setf (uiop:getenv \"ANTHROPIC_API_KEY\") \"sk-ant-...\")
+(defun load-configuration-from-file (&key (path +default-config-file-path+) verbose)
+  "Load configuration from a Lisp file (OPT-IN ONLY - never called automatically).
 
-Or you can directly set the special variables:
-  (setf cl-llm-provider:*default-provider* :anthropic)
-  (setf cl-llm-provider:*default-model* \"claude-3-sonnet-20240229\")
+   PATH - Path to configuration file (default: +default-config-file-path+)
+   VERBOSE - If true, print loading progress (default: NIL)
 
-Returns plist of loaded configuration values.
+   IMPORTANT: This function is NEVER called automatically by the library.
+   Configuration is purely opt-in. You can configure the library via:
 
-Example:
-  (load-configuration)  ; Loads from ~/.config/cl-llm-provider/config.lisp
-  (load-configuration :config-file #p\"~/my-config.lisp\")
-  (load-configuration :verbose t)"
-  (let* ((config-path (or config-file (default-config-path)))
+   1. Explicit arguments:
+      (make-provider :anthropic :api-key \"sk-ant-...\")
+
+   2. Environment variables:
+      export ANTHROPIC_API_KEY=\"sk-ant-...\"
+
+   3. This function (loads a Lisp file that can set env vars or special vars):
+      (load-configuration-from-file :path \"~/.config/cl-llm-provider/config.lisp\")
+
+   The configuration file should set environment variables:
+     (setf (uiop:getenv \"ANTHROPIC_API_KEY\") \"sk-ant-...\")
+     (setf (uiop:getenv \"OPENAI_API_KEY\") \"sk-...\")
+
+   Or directly set the special variables:
+     (setf cl-llm-provider:*default-provider* :anthropic)
+     (setf cl-llm-provider:*default-model* \"claude-3-sonnet-20240229\")
+
+   Returns plist of loaded configuration values.
+
+   Examples:
+     (load-configuration-from-file)                    ; Uses +default-config-file-path+
+     (load-configuration-from-file :path #p\"~/my-config.lisp\")
+     (load-configuration-from-file :verbose t)"
+  (let* ((config-path path)
          (resolved-path (probe-file config-path)))
 
     (when verbose
@@ -61,18 +80,20 @@ Example:
       (t
        (when verbose
          (format t "Status: ✗ Not found~%")
-         (format t "~%~%To create configuration:~%")
+         (format t "~%~%To create configuration file:~%")
          (format t "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%")
          (format t "1. Create directory:~%")
          (format t "   mkdir -p ~/.config/cl-llm-provider~%")
          (format t "~%2. Create config file at:~%")
-         (format t "   ~A~%" (default-config-path))
+         (format t "   ~A~%" +default-config-file-path+)
          (format t "~%3. Add your API keys:~%")
          (format t "   ;;; cl-llm-provider configuration~%")
          (format t "   (setf (uiop:getenv \"ANTHROPIC_API_KEY\") \"sk-ant-...\")~%")
          (format t "   (setf (uiop:getenv \"OPENAI_API_KEY\") \"sk-...\")~%")
          (format t "~%4. Optionally set defaults:~%")
          (format t "   (setf cl-llm-provider:*default-model* \"claude-3-sonnet-20240229\")~%")
+         (format t "~%5. Load it manually:~%")
+         (format t "   (load-configuration-from-file)~%")
          (format t "~%See config.lisp.example in the repository for more options.~%"))))
 
     ;; Show what was loaded

@@ -3,7 +3,7 @@
 ;;;; Copy this file to ~/.config/cl-llm-provider/config.lisp
 ;;;; and fill in your API keys.
 ;;;;
-;;;; Then load it with: (cl-llm-provider:load-configuration)
+;;;; Then load it with: (cl-llm-provider:load-configuration-from-file)
 
 ;;; Provider API Keys
 ;;; -----------------

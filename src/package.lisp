@@ -27,7 +27,8 @@
    #:make-tool-result
 
    ;; Configuration
-   #:load-configuration
+   #:+default-config-file-path+
+   #:load-configuration-from-file
    #:configure-defaults
    #:*default-provider*
    #:*default-model*

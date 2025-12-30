@@ -551,13 +551,20 @@ Store configuration in `~/.config/cl-llm-provider/config.lisp`:
 (setf (uiop:getenv "OPENAI_API_KEY") "sk-...")
 (setf (uiop:getenv "ANTHROPIC_API_KEY") "sk-ant-...")
 
-;;; Load and apply configuration
-(load-configuration)
-
 ;;; Configure defaults
 (configure-defaults :provider (make-provider :anthropic)
                    :model "claude-3-sonnet-20240229"
                    :temperature 1.0)
+```
+
+Then load it manually in your application (opt-in only):
+
+```lisp
+;; Load from default location
+(load-configuration-from-file)
+
+;; Or specify custom path
+(load-configuration-from-file :path "~/my-config.lisp")
 ```
 
 ## Multi-Provider Support

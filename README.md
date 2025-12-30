@@ -42,10 +42,16 @@ Unified Common Lisp interface for multiple LLM provider APIs (text completion an
 ```lisp
 (use-package :cl-llm-provider)
 
-;; Load API keys from config file
-(load-configuration)
+;; Option 1: Use environment variables (recommended for libraries)
+;; export ANTHROPIC_API_KEY="sk-ant-..."
 
-;; Configure defaults
+;; Option 2: Explicit API key in code
+(defvar *my-provider* (make-provider :anthropic :api-key "sk-ant-..."))
+
+;; Option 3: Load from config file (opt-in only, never automatic)
+(load-configuration-from-file)  ; Loads from +default-config-file-path+
+
+;; Configure defaults (optional)
 (configure-defaults :provider :anthropic
                     :model "claude-3-sonnet-20240229")
 
@@ -260,7 +266,7 @@ You can do anything in the Lisp config file since it's just Lisp code:
 
 **Provider Management**
 - `make-provider(type &key api-key base-url model options)` - Create a provider instance
-- `load-configuration()` - Load provider configuration from config file
+- `load-configuration-from-file(&key path verbose)` - Load provider configuration from file (opt-in only)
 - `configure-defaults(&key provider model temperature max-tokens)` - Set global defaults
 
 **Tool Support**

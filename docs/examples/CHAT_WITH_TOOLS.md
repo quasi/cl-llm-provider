@@ -1,12 +1,16 @@
-# Complete Chat Session with Tool Support Example
+# Complete Chat Session with Enhanced Tool Support Example
 
-This example demonstrates building an interactive chat application with session management and tool support using cl-llm-provider.
+This example demonstrates building an interactive chat application with session management and advanced tool support using cl-llm-provider's enhanced tools functionality.
 
 ## Features Demonstrated
 
 - ✓ Multi-turn conversation with message history
 - ✓ Session management and persistence
-- ✓ Tool definition and execution
+- ✓ Enhanced tool definition with safety levels and categories
+- ✓ Parameter validation before execution
+- ✓ Tool registry for discovery and management
+- ✓ Approval workflows for dangerous operations
+- ✓ Lifecycle hooks for logging and metrics
 - ✓ Dynamic tool response handling
 - ✓ Error handling and recovery
 - ✓ Token usage tracking
@@ -20,6 +24,7 @@ This example demonstrates building an interactive chat application with session 
 (ql:quickload :cl-ppcre)
 
 (use-package :cl-llm-provider)
+(use-package :cl-llm-provider.tools)  ; NEW: Use enhanced tools module
 
 ;;;; ============================================================
 ;;;; DATA STRUCTURES
@@ -40,163 +45,155 @@ This example demonstrates building an interactive chat application with session 
              :initform nil
              :accessor session-messages
              :documentation "Conversation history")
-   (tools :initarg :tools
-          :initform nil
-          :accessor session-tools
-          :documentation "Available tools")
-   (tool-functions :initarg :tool-functions
-                   :initform (make-hash-table :test 'equal)
-                   :accessor session-tool-functions
-                   :documentation "Mapping of tool names to functions")
+   (tool-registry :initarg :tool-registry
+                  :initform nil
+                  :accessor session-tool-registry
+                  :documentation "NEW: Tool registry for enhanced tools")
    (total-tokens :initarg :total-tokens
                  :initform 0
                  :accessor session-total-tokens
                  :documentation "Total tokens used in session")))
 
 ;;;; ============================================================
-;;;; TOOL DEFINITIONS
+;;;; TOOL DEFINITIONS (with enhanced features)
 ;;;; ============================================================
 
 (defun define-calculator-tools ()
-  "Define calculator tools"
+  "Define calculator tools with enhanced features"
   (list
-   ;; Add tool
-   (make-instance 'tool-definition
-     :name "add"
-     :description "Add two numbers"
-     :parameters '((:name "a" :type :number :description "First number")
-                   (:name "b" :type :number :description "Second number"))
-     :required '("a" "b"))
+   ;; Add tool - safe, read-only
+   (define-tool "add"
+     "Add two numbers"
+     '((:name "a" :type :number :description "First number")
+       (:name "b" :type :number :description "Second number"))
+     :required '("a" "b")
+     :safety-level :safe
+     :categories '(:calculation)
+     :parameter-validators '(("a" . (:type :number))
+                             ("b" . (:type :number)))
+     :on-start (lambda (call args)
+                 (format t "~&[→] Computing ~A + ~A~%" (getf args :a) (getf args :b)))
+     :handler (lambda (args)
+               (+ (getf args :a) (getf args :b))))
 
    ;; Subtract tool
-   (make-instance 'tool-definition
-     :name "subtract"
-     :description "Subtract two numbers"
-     :parameters '((:name "a" :type :number :description "First number")
-                   (:name "b" :type :number :description "Second number"))
-     :required '("a" "b"))
+   (define-tool "subtract"
+     "Subtract two numbers"
+     '((:name "a" :type :number :description "First number")
+       (:name "b" :type :number :description "Second number"))
+     :required '("a" "b")
+     :safety-level :safe
+     :categories '(:calculation)
+     :parameter-validators '(("a" . (:type :number))
+                             ("b" . (:type :number)))
+     :handler (lambda (args)
+               (- (getf args :a) (getf args :b))))
 
    ;; Multiply tool
-   (make-instance 'tool-definition
-     :name "multiply"
-     :description "Multiply two numbers"
-     :parameters '((:name "a" :type :number :description "First number")
-                   (:name "b" :type :number :description "Second number"))
-     :required '("a" "b"))
+   (define-tool "multiply"
+     "Multiply two numbers"
+     '((:name "a" :type :number :description "First number")
+       (:name "b" :type :number :description "Second number"))
+     :required '("a" "b")
+     :safety-level :safe
+     :categories '(:calculation)
+     :parameter-validators '(("a" . (:type :number))
+                             ("b" . (:type :number)))
+     :handler (lambda (args)
+               (* (getf args :a) (getf args :b))))
 
-   ;; Divide tool
-   (make-instance 'tool-definition
-     :name "divide"
-     :description "Divide two numbers"
-     :parameters '((:name "a" :type :number :description "Numerator")
-                   (:name "b" :type :number :description "Denominator"))
-     :required '("a" "b"))))
+   ;; Divide tool - with validation to prevent division by zero
+   (define-tool "divide"
+     "Divide two numbers"
+     '((:name "a" :type :number :description "Numerator")
+       (:name "b" :type :number :description "Denominator"))
+     :required '("a" "b")
+     :safety-level :safe
+     :categories '(:calculation)
+     :parameter-validators '(("a" . (:type :number))
+                             ("b" . (:type :number)))
+     :handler (lambda (args)
+               (let ((divisor (getf args :b)))
+                 (if (zerop divisor)
+                     (error "Division by zero")
+                     (/ (getf args :a) divisor)))))))
 
 (defun define-web-tools ()
-  "Define web/information tools"
+  "Define web/information tools with enhanced features"
   (list
-   ;; Search tool
-   (make-instance 'tool-definition
-     :name "search"
-     :description "Search for information"
-     :parameters '((:name "query" :type :string :description "Search query")
-                   (:name "max-results" :type :integer :description "Maximum results"
-                    :enum (5 10 20)))
-     :required '("query"))
+   ;; Search tool - safe
+   (define-tool "search"
+     "Search for information"
+     '((:name "query" :type :string :description "Search query")
+       (:name "max-results" :type :integer :description "Maximum results (1-50)"))
+     :required '("query")
+     :safety-level :safe
+     :categories '(:search :external-api)
+     :parameter-validators '(("query" . (:length-validator :min-length 1 :max-length 200))
+                             ("max-results" . (:type :integer :min 1 :max 50)))
+     :handler (lambda (args)
+               (format nil "Search results for: ~A (~A results)"
+                       (getf args :query)
+                       (or (getf args :max-results) 10))))
 
-   ;; Weather tool
-   (make-instance 'tool-definition
-     :name "get_weather"
-     :description "Get current weather"
-     :parameters '((:name "location" :type :string :description "City and state")
-                   (:name "unit" :type :string :description "Temperature unit"
-                    :enum ("celsius" "fahrenheit")))
-     :required '("location"))
+   ;; Weather tool - safe
+   (define-tool "get_weather"
+     "Get current weather for a location"
+     '((:name "location" :type :string :description "City and state")
+       (:name "unit" :type :string :description "Temperature unit"
+              :enum ("celsius" "fahrenheit")))
+     :required '("location")
+     :safety-level :safe
+     :categories '(:search :external-api)
+     :parameter-validators '(("location" . (:length-validator :min-length 2 :max-length 100))
+                             ("unit" . (:enum-validator '("celsius" "fahrenheit"))))
+     :handler (lambda (args)
+               (format nil "Weather for ~A: Sunny, 22°C"
+                       (getf args :location))))
 
-   ;; Get time tool
-   (make-instance 'tool-definition
-     :name "get_time"
-     :description "Get current time and date"
-     :parameters nil
-     :required nil)))
+   ;; Get time tool - safe
+   (define-tool "get_time"
+     "Get current time and date"
+     nil
+     :safety-level :safe
+     :categories '(:search)
+     :handler (lambda (args)
+               (declare (ignore args))
+               (multiple-value-bind (sec min hour date month year)
+                   (decode-universal-time (get-universal-time))
+                 (format nil "Time: ~2,'0D:~2,'0D:~2,'0D, Date: ~4D-~2,'0D-~2,'0D"
+                         hour min sec year month date))))))
 
 ;;;; ============================================================
-;;;; TOOL IMPLEMENTATIONS
+;;;; Tool handlers are now defined inline in define-tool
+;;;; Tools are automatically executed with validation, safety checks, and hooks
 ;;;; ============================================================
-
-(defun execute-tool (tool-name arguments)
-  "Execute a tool and return result JSON"
-  (flet ((get-arg (key)
-           (getf arguments (make-keyword (string-upcase key)))))
-
-    (case (make-keyword (string-upcase tool-name))
-      ;; Calculator tools
-      (:add
-       (yason:encode-to-string
-        `(("result" . ,(+ (get-arg "a") (get-arg "b"))))))
-
-      (:subtract
-       (yason:encode-to-string
-        `(("result" . ,(- (get-arg "a") (get-arg "b"))))))
-
-      (:multiply
-       (yason:encode-to-string
-        `(("result" . ,(* (get-arg "a") (get-arg "b"))))))
-
-      (:divide
-       (let ((divisor (get-arg "b")))
-         (if (zerop divisor)
-             (yason:encode-to-string '(("error" . "Division by zero")))
-             (yason:encode-to-string
-              `(("result" . ,(/ (get-arg "a") divisor)))))))
-
-      ;; Web/Info tools
-      (:search
-       ;; Mock implementation
-       (let ((query (get-arg "query")))
-         (yason:encode-to-string
-          `(("results" . (
-             (("title" . "Result 1") ("url" . "http://example.com/1"))
-             (("title" . "Result 2") ("url" . "http://example.com/2"))))))))
-
-      (:get_weather
-       ;; Mock implementation
-       (let ((location (get-arg "location"))
-             (unit (or (get-arg "unit") "celsius")))
-         (yason:encode-to-string
-          `(("location" . ,location)
-            ("temperature" . 22)
-            ("unit" . ,unit)
-            ("condition" . "Partly Cloudy")))))
-
-      (:get_time
-       ;; Get actual current time
-       (multiple-value-bind (sec min hour date month year)
-           (decode-universal-time (get-universal-time))
-         (yason:encode-to-string
-          `(("time" . ,(format nil "~2,'0D:~2,'0D:~2,'0D" hour min sec))
-            ("date" . ,(format nil "~4D-~2,'0D-~2,'0D" year month date))))))
-
-      (t
-       (yason:encode-to-string
-        `(("error" . ,(format nil "Unknown tool: ~A" tool-name))))))))
 
 ;;;; ============================================================
 ;;;; SESSION MANAGEMENT
 ;;;; ============================================================
 
 (defun create-session (provider model &key system-prompt tools)
-  "Create a new chat session"
-  (let ((session (make-instance 'chat-session
-                               :provider provider
-                               :model model
-                               :system-prompt system-prompt
-                               :tools tools)))
-    ;; Register tool functions
+  "Create a new chat session with enhanced tools registry"
+  (let* ((registry (make-tool-registry :name "chat-session"))
+         (session (make-instance 'chat-session
+                                :provider provider
+                                :model model
+                                :system-prompt system-prompt
+                                :tool-registry registry)))
+
+    ;; Register tools in the registry
     (dolist (tool tools)
-      (setf (gethash (tool-name tool)
-                    (session-tool-functions session))
-           #'execute-tool))
+      (register-tool registry tool))
+
+    ;; Set up global hooks for logging
+    (setf (registry-global-hooks registry)
+          (list
+           :on-start (lambda (call args)
+                       (format t "~&[Tool] Executing ~A~%" (tool-call-name call)))
+           :on-complete (lambda (call args result)
+                          (format t "~&[Tool] ✓ Completed~%" nil))))
+
     session))
 
 (defun save-session (session filename)
@@ -220,7 +217,9 @@ This example demonstrates building an interactive chat application with session 
   (format t "Model: ~A~%" (session-model session))
   (format t "Messages: ~A~%" (length (session-messages session)))
   (format t "Total tokens: ~A~%" (session-total-tokens session))
-  (format t "Available tools: ~A~%" (mapcar #'tool-name (session-tools session))))
+  (let ((registry (session-tool-registry session)))
+    (format t "Available tools: ~A~%"
+            (mapcar #'tool-name (list-tools registry)))))
 
 ;;;; ============================================================
 ;;;; CONVERSATION HANDLING
@@ -235,20 +234,20 @@ This example demonstrates building an interactive chat application with session 
   (reverse (session-messages session)))
 
 (defun chat (session user-message)
-  "Send a message and get a response with tool support"
+  "Send a message and get a response with enhanced tool support"
   ;; Add user message to history
   (add-message session "user" user-message)
 
   ;; Get conversation history
   (let ((history (get-conversation-history session))
-        (tools (session-tools session)))
+        (registry (session-tool-registry session)))
 
-    ;; Make request with tools if available
+    ;; Make request with tools (only safe ones by default)
     (let ((response (complete history
                              :provider (session-provider session)
                              :model (session-model session)
                              :system (session-system-prompt session)
-                             :tools (when tools tools))))
+                             :tools (tools-for-llm :registry registry))))
 
       ;; Update token count
       (let ((usage (response-usage response)))
@@ -265,39 +264,47 @@ This example demonstrates building an interactive chat application with session 
 
         ;; Model wants to use tools
         ((response-tool-calls response)
-         (let ((tool-results (process-tool-calls session response)))
-           ;; Add assistant message with tool calls
-           (add-message session "assistant" "")
+         ;; Execute all tool calls using enhanced execution engine
+         (handler-case
+             (let* ((tool-results (execute-tool-calls response
+                                                       :registry registry
+                                                       :skip-approval t))
+                    (tool-messages (execution-results-to-tool-messages tool-results)))
 
-           ;; Add tool results
-           (dolist (result tool-results)
-             (add-message session "tool" result))
+               ;; Add assistant message
+               (add-message session "assistant" (response-content response))
 
-           ;; Continue conversation with results
-           (chat session (format nil "[Tool results processed, continue conversation]"))))
+               ;; Add tool results
+               (dolist (msg tool-messages)
+                 (add-message session "tool" (getf msg :content)))
+
+               ;; Continue conversation with results
+               (chat session (format nil "[Tool results processed, continue conversation]")))
+
+           ;; Handle execution errors
+           (tool-validation-error (e)
+             (format t "~&Validation Error: Parameter ~A = ~A~%"
+                     (error-parameter e) (error-value e))
+             (values "Tool validation failed" nil))
+
+           (tool-safety-violation (e)
+             (format t "~&Safety Error: Tool exceeds safety level~%")
+             (values "Tool is too dangerous" nil))
+
+           (error (e)
+             (format t "~&Tool Error: ~A~%" e)
+             (values (format nil "Tool execution failed: ~A" e) nil))))
 
         ;; Model gave up
         (t
          (values "Error: Model did not provide response" nil))))))
 
+;; Helper function for backward compatibility
 (defun process-tool-calls (session response)
-  "Process tool calls from response"
-  (let ((results nil))
-    (dolist (call (response-tool-calls response))
-      (let* ((tool-id (tool-call-id call))
-             (tool-name (tool-call-name call))
-             (arguments (tool-call-arguments call)))
-
-        ;; Execute tool
-        (format t "~&[Executing tool: ~A with args: ~A]~%" tool-name arguments)
-        (let ((result (execute-tool tool-name arguments)))
-          (format t "[Tool result: ~A]~%" result)
-
-          ;; Create tool result message
-          (let ((tool-result-msg (make-tool-result tool-id result)))
-            (push tool-result-msg results)))))
-
-    (reverse results)))
+  "Process tool calls from response (legacy wrapper)"
+  (let ((registry (session-tool-registry session)))
+    (execution-results-to-tool-messages
+     (execute-tool-calls response :registry registry :skip-approval t))))
 
 ;;;; ============================================================
 ;;;; INTERACTIVE CHAT LOOP
@@ -628,8 +635,26 @@ Goodbye!
           (length messages)))
 ```
 
+## Enhanced Tools Features
+
+This example showcases these new features:
+
+- **Tool Safety Levels** - Tools classified as :safe, :moderate, or :dangerous
+- **Tool Categories** - Organize tools with predefined categories (:calculation, :search, etc.)
+- **Parameter Validators** - Validate arguments before execution (:type, :length-validator, :enum-validator)
+- **Tool Registry** - Dynamically manage and discover tools
+- **Lifecycle Hooks** - Execute code at :on-start and :on-complete events
+- **Error Handling** - Comprehensive error conditions for validation, safety, and approval
+- **Tools for LLM** - Automatically provide only safe tools to the model
+
+See the enhanced tools documentation for more details on each feature.
+
 ## See Also
 
+- `docs/TOOLS-README.md` - **New!** Enhanced tools documentation index
+- `docs/TOOLS-QUICK-START.md` - **New!** 5-minute getting started guide
+- `docs/TOOLS-ADVANCED.md` - **New!** Comprehensive feature guide
+- `docs/TOOLS-API-REFERENCE.md` - **New!** Complete API documentation
 - `docs/PROTOCOL.md` - Protocol architecture
 - `docs/FEATURES.md` - Feature documentation
 - `docs/PROVIDERS.md` - Adding new providers

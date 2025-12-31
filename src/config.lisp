@@ -129,13 +129,11 @@
         :openai-api-key (uiop:getenv "OPENAI_API_KEY")
         :openrouter-api-key (uiop:getenv "OPENROUTER_API_KEY")
         :ollama-base-url (uiop:getenv "OLLAMA_BASE_URL")
-        :default-provider (when-let ((val (uiop:getenv "LLM_DEFAULT_PROVIDER")))
-                            (intern (string-upcase val) :keyword))
-        :default-model (uiop:getenv "LLM_DEFAULT_MODEL")
-        :default-max-tokens (when-let ((val (uiop:getenv "LLM_DEFAULT_MAX_TOKENS")))
-                              (parse-integer val :junk-allowed t))
-        :default-temperature (when-let ((val (uiop:getenv "LLM_DEFAULT_TEMPERATURE")))
-                               (read-from-string val))))
+        :default-provider *default-provider*
+        :default-model *default-model*
+        :default-max-tokens *default-max-tokens*
+        :default-temperature *default-temperature*))
+
 
 (defun configure-defaults (&key provider model max-tokens temperature)
   "Set global defaults for LLM operations.

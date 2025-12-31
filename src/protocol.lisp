@@ -231,11 +231,15 @@ Displays timing breakdown or 'not recorded' for each metric when profiling was d
 
 (defun plist-to-hash (plist &key (test 'equal))
   "Convert a plist to a hash table with string keys.
-Keywords like :role become \"role\", preserving string keys as-is."
+Keywords like :role become \"role\", :tool-call-id becomes \"tool_call_id\".
+Preserving string keys as-is."
   (let ((hash (make-hash-table :test test)))
     (loop for (key value) on plist by #'cddr
           for string-key = (etypecase key
-                            (keyword (string-downcase (symbol-name key)))
+                            (keyword
+                             ;; Convert hyphens to underscores for JSON compatibility
+                             (substitute #\_ #\-
+                                        (string-downcase (symbol-name key))))
                             (string key))
           do (setf (gethash string-key hash) value))
     hash))

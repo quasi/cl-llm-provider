@@ -80,11 +80,9 @@ Lisp is a functional programming language known for...
 ;; Same code, different provider
 ```
 
-**See the [📚 Human-Oriented Documentation](#-human-oriented-documentation) section below for tutorials and detailed examples.**
-
 ---
 
-## Documentation
+## Human-Oriented Documentation
 
 ### 📚 Getting Started (Choose Your Path)
 

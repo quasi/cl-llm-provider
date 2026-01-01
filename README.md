@@ -396,12 +396,33 @@ See `tests/README.md` and `tests/test-*-README.md` for complete documentation.
 
 ## Documentation
 
-Comprehensive documentation is available in the `docs/` folder:
+### 🤖 Agent-Oriented Documentation
 
+**For LLM agents and automated code assistants** - Formal specifications optimized for machine parsing and reasoning:
+
+| Document | Purpose | Contents |
+|----------|---------|----------|
+| **[docs/SPEC.agent.md](docs/SPEC.agent.md)** | Core rules and invariants | 15 normative rules, 7 mechanically-checkable invariants, 5 anti-patterns, transformation rules, machine verification checklist |
+| **[docs/PATTERNS.agent.md](docs/PATTERNS.agent.md)** | Exemplar code patterns | 14 complete runnable examples (10 core patterns + 4 edge cases) demonstrating idiomatic usage across all major workflows |
+| **[docs/API-SPEC.agent.md](docs/API-SPEC.agent.md)** | Protocol contracts | Formal method signatures, type specifications, preconditions/postconditions, provider-specific behavior, state machines |
+
+### 📚 Human-Oriented Documentation
+
+**Core Documentation:**
 - **[docs/PROTOCOL.md](docs/PROTOCOL.md)** - Protocol architecture and generic functions
 - **[docs/PROVIDERS.md](docs/PROVIDERS.md)** - Implementation guide for adding new providers
 - **[docs/FEATURES.md](docs/FEATURES.md)** - Detailed feature documentation
-- **[docs/examples/CHAT_WITH_TOOLS.md](docs/examples/CHAT_WITH_TOOLS.md)** - Complete chat session example with tools
+
+**Enhanced Tools System:**
+- **[docs/TOOLS-README.md](docs/TOOLS-README.md)** - Enhanced tools documentation index
+- **[docs/TOOLS-QUICK-START.md](docs/TOOLS-QUICK-START.md)** - Get started with enhanced tools in 5 minutes
+- **[docs/TOOLS-ADVANCED.md](docs/TOOLS-ADVANCED.md)** - Advanced features: safety, approvals, validators, categories, hooks
+- **[docs/TOOLS-API-REFERENCE.md](docs/TOOLS-API-REFERENCE.md)** - Complete API reference for tools module
+- **[docs/TOOLS-MIGRATION.md](docs/TOOLS-MIGRATION.md)** - Migration guide for upgrading existing code
+- **[docs/TOOLS-TESTING.md](docs/TOOLS-TESTING.md)** - Testing guide for enhanced tools
+
+**Examples:**
+- **[docs/examples/CHAT_WITH_TOOLS.md](docs/examples/CHAT_WITH_TOOLS.md)** - Complete interactive chat session with enhanced tools
 
 ## License
 

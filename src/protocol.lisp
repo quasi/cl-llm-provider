@@ -75,6 +75,55 @@ Default implementation returns nil (no standard env var)."))
 (defmethod provider-api-key-env-var ((provider llm-provider))
   nil)
 
+;;; ============================================================
+;;; Provider Introspection Protocol
+;;; ============================================================
+
+(defgeneric provider-type (provider)
+  (:documentation "Return provider type as a keyword.
+Returns one of: :openai, :anthropic, :ollama, :openrouter, :openai-compatible.
+The keyword is suitable for use in eql dispatch, equality tests, and serialization."))
+
+(defgeneric provider-name (provider)
+  (:documentation "Return human-readable provider name for display.
+Returns a string suitable for UIs (e.g., \"OpenAI\", \"Anthropic\")."))
+
+(defgeneric provider-capabilities (provider)
+  (:documentation "Return plist of provider capabilities.
+Keys: :tools, :embeddings, :streaming, :vision, :function-calling.
+Values are T or NIL. Missing keys are equivalent to NIL (not supported)."))
+
+(defgeneric provider-config-summary (provider)
+  (:documentation "Return configuration summary plist (no sensitive data).
+Keys: :type, :name, :model, :base-url, :capabilities.
+Does NOT include API keys or other credentials."))
+
+(defmethod provider-config-summary ((provider llm-provider))
+  "Default implementation: aggregate data from other introspection functions."
+  (list :type (provider-type provider)
+        :name (provider-name provider)
+        :model (provider-default-model provider)
+        :base-url (provider-base-url provider)
+        :capabilities (provider-capabilities provider)))
+
+(defun provider-supports-p (provider capability)
+  "Check if PROVIDER supports CAPABILITY (keyword).
+Example: (provider-supports-p provider :tools)
+Returns T if supported, NIL otherwise."
+  (getf (provider-capabilities provider) capability))
+
+(defgeneric model-metadata (provider model-name)
+  (:documentation "Return metadata plist for MODEL-NAME, or NIL if unknown.
+Keys: :context-window, :max-output-tokens, :supports-tools, :supports-vision,
+      :input-cost-per-1m-tokens, :output-cost-per-1m-tokens.
+Missing keys mean 'unknown' (not necessarily unsupported).
+Providers may return NIL if they don't maintain model metadata."))
+
+(defmethod model-metadata ((provider llm-provider) model-name)
+  "Default: no metadata available."
+  (declare (ignore model-name))
+  nil)
+
 (defgeneric translate-tool-to-provider (provider tool-definition)
   (:documentation "Translate generic tool definition to provider-specific format.
 

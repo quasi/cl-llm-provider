@@ -28,6 +28,7 @@
                  (:file "types" :depends-on ("package"))
                  (:file "config" :depends-on ("package" "conditions"))
                  (:file "protocol" :depends-on ("package" "types" "conditions"))
+                 (:file "model-registry" :depends-on ("package" "protocol"))
                  (:file "tools" :depends-on ("package" "types" "conditions"))
                  ;; Enhanced tools module (registry, validators, approval, hooks, execution)
                  (:module "tools-enhanced"
@@ -42,7 +43,7 @@
                    (:file "hooks" :depends-on ("package"))
                    (:file "execution" :depends-on ("package" "categories" "validators" "registry" "approval" "hooks"))))
                  (:module "providers"
-                  :depends-on ("package" "types" "conditions" "protocol" "tools")
+                  :depends-on ("package" "types" "conditions" "protocol" "model-registry" "tools")
                   :components
                   ((:file "anthropic")
                    (:file "openai")

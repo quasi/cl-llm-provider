@@ -145,6 +145,20 @@
    #:translate-tool-to-provider
    #:parse-tool-calls
 
+   ;; Provider introspection
+   #:provider-type
+   #:provider-name
+   #:provider-capabilities
+   #:provider-supports-p
+   #:provider-config-summary
+
+   ;; Model metadata
+   #:model-metadata
+   #:*openai-model-registry*
+   #:*anthropic-model-registry*
+   #:register-model-metadata
+   #:get-model-metadata
+
    ;; Enhanced tools module (re-exported from cl-llm-provider.tools)
    ;; See cl-llm-provider.tools package for additional exports
 

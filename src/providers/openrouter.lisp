@@ -10,6 +10,21 @@
 (defmethod provider-api-key-env-var ((provider openrouter-provider))
   "OPENROUTER_API_KEY")
 
+;;; Provider Introspection
+
+(defmethod provider-type ((provider openrouter-provider))
+  :openrouter)
+
+(defmethod provider-name ((provider openrouter-provider))
+  "OpenRouter")
+
+(defmethod provider-capabilities ((provider openrouter-provider))
+  '(:tools t
+    :embeddings nil  ; OpenRouter routes to models, not all support embeddings
+    :streaming t
+    :vision t  ; Model-dependent, but many models support it
+    :function-calling t))
+
 (defmethod send-completion-request ((provider openrouter-provider) messages
                                     &key model max-tokens temperature
                                          system tools tool-choice stop)
@@ -79,7 +94,40 @@
 ;; OpenRouter uses OpenAI-compatible response format
 (defmethod parse-completion-response ((provider openrouter-provider) raw-response
                                       &key performance)
-  (call-next-method provider raw-response :performance performance))  ; Use openai-provider's implementation via inheritance
+  (let* ((choices (gethash "choices" raw-response))
+         (first-choice (when (and choices (> (length choices) 0))
+                        (elt choices 0)))
+         (message (gethash "message" first-choice))
+         (content (gethash "content" message))
+         (finish-reason (gethash "finish_reason" first-choice))
+         (usage (gethash "usage" raw-response))
+         (tool-calls-raw (gethash "tool_calls" message))
+         (tool-calls (when tool-calls-raw
+                      (parse-tool-calls provider raw-response))))
+
+    (make-instance 'completion-response
+                   :id (gethash "id" raw-response)
+                   :model (gethash "model" raw-response)
+                   :content content
+                   :message (alexandria:hash-table-plist message)
+                   :tool-calls tool-calls
+                   :finish-reason (intern (string-upcase finish-reason) :keyword)
+                   :usage (list :prompt-tokens (gethash "prompt_tokens" usage)
+                                :completion-tokens (gethash "completion_tokens" usage)
+                                :total-tokens (gethash "total_tokens" usage))
+                   :raw raw-response
+                   :performance performance
+                   :metadata (let ((metadata nil))
+                              ;; Provider introspection
+                              (setf (getf metadata :provider-type) (provider-type provider))
+                              (setf (getf metadata :provider-name) (provider-name provider))
+                              ;; Extract system fingerprint
+                              (when-let ((fingerprint (gethash "system_fingerprint" raw-response)))
+                                (setf (getf metadata :system-fingerprint) fingerprint))
+                              ;; Extract created timestamp
+                              (when-let ((created (gethash "created" raw-response)))
+                                (setf (getf metadata :created) created))
+                              metadata))))
 
 (defmethod send-embedding-request ((provider openrouter-provider) input
                                    &key model dimensions)
@@ -129,4 +177,23 @@
 ;; OpenRouter uses OpenAI-compatible embedding response format
 (defmethod parse-embedding-response ((provider openrouter-provider) raw-response
                                      &key performance)
-  (call-next-method provider raw-response :performance performance))  ; Use openai-provider's implementation via inheritance
+  (let* ((data (gethash "data" raw-response))
+         (usage (gethash "usage" raw-response))
+         (embeddings (map 'list
+                          (lambda (item)
+                            (let ((embedding (gethash "embedding" item)))
+                              (coerce embedding 'list)))
+                          data)))
+
+    (make-instance 'embedding-response
+                   :embeddings embeddings
+                   :model (gethash "model" raw-response)
+                   :usage (list :prompt-tokens (gethash "prompt_tokens" usage)
+                                :total-tokens (gethash "total_tokens" usage))
+                   :raw raw-response
+                   :performance performance
+                   :metadata (let ((metadata nil))
+                              ;; Provider introspection
+                              (setf (getf metadata :provider-type) (provider-type provider))
+                              (setf (getf metadata :provider-name) (provider-name provider))
+                              metadata))))

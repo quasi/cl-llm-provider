@@ -80,6 +80,22 @@ Lisp is a functional programming language known for...
 ;; Same code, different provider
 ```
 
+**Check provider capabilities:**
+```lisp
+;; Check if provider supports tools before using them
+(let ((provider (make-provider :anthropic :model "claude-3-5-sonnet-20241022")))
+  (if (provider-supports-p provider :tools)
+      (complete messages :tools my-tools)
+      (complete messages)))
+
+;; Get model context window and pricing
+(let* ((provider (make-provider :openai))
+       (meta (model-metadata provider "gpt-4o")))
+  (format t "Context: ~D tokens~%" (getf meta :context-window))
+  (format t "Cost: $~,2F per 1M input tokens~%"
+          (getf meta :input-cost-per-1m-tokens)))
+```
+
 ---
 
 ## Human-Oriented Documentation
@@ -92,6 +108,7 @@ Lisp is a functional programming language known for...
 |------|-----------|
 | **Get working in 5 minutes** | [Quick Start](docs/quickstart.md) |
 | **Learn how to use this library** | [Tutorials](docs/tutorials/01-basics.md) - Progressive learning |
+| **Query provider capabilities** | [Metadata API Guide](docs/metadata-api.md) - Introspection and model metadata |
 | **Solve a specific problem** | [How-To Guides](docs/how-to/) - Task-oriented |
 | **Understand the design** | [Explanation](docs/explanation/architecture.md) - Conceptual |
 | **Look up an API** | [Reference](docs/reference/api.md) - Complete API |
@@ -121,6 +138,7 @@ Lisp is a functional programming language known for...
 ```
 docs/
 ├── quickstart.md              # Get started in 5 minutes
+├── metadata-api.md            # Provider introspection and model metadata
 ├── tutorials/                 # Progressive learning
 │   ├── 01-basics.md          # Messages and conversations
 │   ├── 02-tool-calling.md    # Using tools with LLMs
@@ -141,7 +159,8 @@ docs/
 └── agent/                    # For LLM agents and code assistants
     ├── SPEC.agent.md        # Formal specification
     ├── PATTERNS.agent.md    # Runnable patterns
-    └── API-SPEC.agent.md    # Formal API specification
+    ├── API-SPEC.agent.md    # Formal API specification
+    └── METADATA-API.agent.md # Metadata/introspection specification
 ```
 
 ### 🤖 Agent-Oriented Documentation
@@ -153,6 +172,7 @@ docs/
 | **[docs/agent/SPEC.agent.md](docs/agent/SPEC.agent.md)** | 15 normative rules, 7 invariants, verification checklist |
 | **[docs/agent/PATTERNS.agent.md](docs/agent/PATTERNS.agent.md)** | 14 complete, runnable patterns |
 | **[docs/agent/API-SPEC.agent.md](docs/agent/API-SPEC.agent.md)** | Formal signatures and state machines |
+| **[docs/agent/METADATA-API.agent.md](docs/agent/METADATA-API.agent.md)** | 10 normative rules, 5 invariants, 10 complete patterns for metadata/introspection API |
 
 See [docs/agent/README.md](docs/agent/README.md) for agent documentation index.
 
@@ -173,6 +193,7 @@ See [docs/agent/README.md](docs/agent/README.md) for agent documentation index.
 ## Key Features at a Glance
 
 - **Message Normalization** - Convert between provider formats automatically
+- **Provider Introspection** - Query capabilities, model metadata, and configuration without trial-and-error
 - **Token Counting** - Accurate usage tracking for cost estimation
 - **Performance Profiling** - Optional timing breakdown for optimization
 - **Comprehensive Error Handling** - Restarts for rate limits, auth failures, API errors

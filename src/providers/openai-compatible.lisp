@@ -17,6 +17,21 @@
 (defmethod provider-api-key-env-var ((provider openai-compatible-provider))
   nil)
 
+;;; Provider Introspection
+
+(defmethod provider-type ((provider openai-compatible-provider))
+  :openai-compatible)
+
+(defmethod provider-name ((provider openai-compatible-provider))
+  "OpenAI-Compatible")
+
+(defmethod provider-capabilities ((provider openai-compatible-provider))
+  '(:tools t
+    :embeddings t  ; Most OpenAI-compatible APIs support embeddings
+    :streaming t
+    :vision nil  ; Conservative default, varies by provider
+    :function-calling t))
+
 ;; All other methods are inherited from openai-provider:
 ;; - send-completion-request
 ;; - parse-completion-response

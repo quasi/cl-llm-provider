@@ -9,6 +9,21 @@
 (defmethod provider-api-key-env-var ((provider ollama-provider))
   nil)  ; Ollama doesn't require API key for local usage
 
+;;; Provider Introspection
+
+(defmethod provider-type ((provider ollama-provider))
+  :ollama)
+
+(defmethod provider-name ((provider ollama-provider))
+  "Ollama")
+
+(defmethod provider-capabilities ((provider ollama-provider))
+  '(:tools t
+    :embeddings t
+    :streaming t
+    :vision nil  ; Model-dependent, conservative default
+    :function-calling t))
+
 (defmethod send-completion-request ((provider ollama-provider) messages
                                     &key model max-tokens temperature
                                          system tools tool-choice stop)
@@ -129,6 +144,9 @@
                    :raw raw-response
                    :performance performance
                    :metadata (let ((metadata nil))
+                              ;; Provider introspection
+                              (setf (getf metadata :provider-type) (provider-type provider))
+                              (setf (getf metadata :provider-name) (provider-name provider))
                               ;; Extract timing information (in nanoseconds)
                               (when-let ((total-dur (gethash "total_duration" raw-response)))
                                 (setf (getf metadata :total-duration-ns) total-dur))
@@ -192,6 +210,9 @@
                    :raw raw-response
                    :performance performance
                    :metadata (let ((metadata nil))
+                              ;; Provider introspection
+                              (setf (getf metadata :provider-type) (provider-type provider))
+                              (setf (getf metadata :provider-name) (provider-name provider))
                               ;; Extract timing information if available
                               (when-let ((total-dur (gethash "total_duration" raw-response)))
                                 (setf (getf metadata :total-duration-ns) total-dur))

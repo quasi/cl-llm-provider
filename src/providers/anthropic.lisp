@@ -8,6 +8,24 @@
 (defmethod provider-api-key-env-var ((provider anthropic-provider))
   "ANTHROPIC_API_KEY")
 
+;;; Provider Introspection
+
+(defmethod provider-type ((provider anthropic-provider))
+  :anthropic)
+
+(defmethod provider-name ((provider anthropic-provider))
+  "Anthropic")
+
+(defmethod provider-capabilities ((provider anthropic-provider))
+  '(:tools t
+    :embeddings nil
+    :streaming t
+    :vision t
+    :function-calling t))
+
+(defmethod model-metadata ((provider anthropic-provider) model-name)
+  (get-model-metadata *anthropic-model-registry* model-name))
+
 (defmethod translate-tool-to-provider ((provider anthropic-provider) (tool tool-definition))
   "Translate to Anthropic tool format."
   (let ((result (make-hash-table :test 'equal))
@@ -163,6 +181,9 @@
                    :raw raw-response
                    :performance performance
                    :metadata (let ((metadata nil))
+                              ;; Provider introspection
+                              (setf (getf metadata :provider-type) (provider-type provider))
+                              (setf (getf metadata :provider-name) (provider-name provider))
                               ;; Extract stop sequence if present
                               (when-let ((stop-seq (gethash "stop_sequence" raw-response)))
                                 (setf (getf metadata :stop-sequence) stop-seq))

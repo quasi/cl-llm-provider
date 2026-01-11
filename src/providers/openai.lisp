@@ -8,6 +8,24 @@
 (defmethod provider-api-key-env-var ((provider openai-provider))
   "OPENAI_API_KEY")
 
+;;; Provider Introspection
+
+(defmethod provider-type ((provider openai-provider))
+  :openai)
+
+(defmethod provider-name ((provider openai-provider))
+  "OpenAI")
+
+(defmethod provider-capabilities ((provider openai-provider))
+  '(:tools t
+    :embeddings t
+    :streaming t
+    :vision t
+    :function-calling t))
+
+(defmethod model-metadata ((provider openai-provider) model-name)
+  (get-model-metadata *openai-model-registry* model-name))
+
 (defmethod send-completion-request ((provider openai-provider) messages
                                     &key model max-tokens temperature
                                          system tools tool-choice stop)
@@ -98,6 +116,9 @@
                    :raw raw-response
                    :performance performance
                    :metadata (let ((metadata nil))
+                              ;; Provider introspection
+                              (setf (getf metadata :provider-type) (provider-type provider))
+                              (setf (getf metadata :provider-name) (provider-name provider))
                               ;; Extract system fingerprint
                               (when-let ((fingerprint (gethash "system_fingerprint" raw-response)))
                                 (setf (getf metadata :system-fingerprint) fingerprint))
@@ -173,6 +194,9 @@
                    :raw raw-response
                    :performance performance
                    :metadata (let ((metadata nil))
+                              ;; Provider introspection
+                              (setf (getf metadata :provider-type) (provider-type provider))
+                              (setf (getf metadata :provider-name) (provider-name provider))
                               ;; Extract created timestamp
                               (when-let ((created (gethash "created" raw-response)))
                                 (setf (getf metadata :created) created))

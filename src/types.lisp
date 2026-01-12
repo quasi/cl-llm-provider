@@ -92,6 +92,45 @@
               (when content
                 (subseq content 0 (min 40 (length content))))))))
 
+;;;; Streaming Types
+
+(defclass stream-chunk ()
+  ((content :initarg :content
+            :initform ""
+            :accessor chunk-content
+            :documentation "Accumulated content so far.")
+   (delta :initarg :delta
+          :initform ""
+          :reader chunk-delta
+          :documentation "New content in this chunk.")
+   (finish-reason :initarg :finish-reason
+                  :initform nil
+                  :reader chunk-finish-reason
+                  :documentation "Set when stream completes (:stop, :length, :tool-calls).")
+   (index :initarg :index
+          :initform 0
+          :reader chunk-index
+          :documentation "Chunk sequence number.")
+   (tool-call-delta :initarg :tool-call-delta
+                    :initform nil
+                    :reader chunk-tool-call-delta
+                    :documentation "Partial tool call data if streaming tool calls.")
+   (usage :initarg :usage
+          :initform nil
+          :reader chunk-usage
+          :documentation "Usage info (only set on final chunk for some providers)."))
+  (:documentation "A single chunk from a streaming response."))
+
+(defmethod print-object ((chunk stream-chunk) stream)
+  (print-unreadable-object (chunk stream :type t)
+    (format stream "~D: ~S~@[ [~A]~]"
+            (chunk-index chunk)
+            (let ((delta (chunk-delta chunk)))
+              (if (> (length delta) 20)
+                  (concatenate 'string (subseq delta 0 20) "...")
+                  delta))
+            (chunk-finish-reason chunk))))
+
 (defclass embedding-response ()
   ((embeddings :initarg :embeddings
                :reader response-embeddings

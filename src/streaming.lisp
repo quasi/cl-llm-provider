@@ -139,8 +139,16 @@ Returns:
 
 ;;;; Stream Reading
 
+(defmethod read-stream-chunk :around ((stream completion-stream) &key timeout)
+  "Dispatch to provider-specific stream reader."
+  (declare (ignore timeout))
+  (let ((provider (stream-provider stream)))
+    (if (typep provider 'anthropic-provider)
+        (read-anthropic-stream-chunk stream)
+        (call-next-method))))
+
 (defmethod read-stream-chunk ((stream completion-stream) &key timeout)
-  "Read next chunk from completion-stream."
+  "Read next chunk from completion-stream (OpenAI-compatible format)."
   (declare (ignore timeout))  ; TODO: implement timeout
   (when (stream-closed-p stream)
     (return-from read-stream-chunk nil))
@@ -148,6 +156,7 @@ Returns:
   (let ((http-stream (stream-http-stream stream))
         (provider (stream-provider stream))
         (index (length (stream-chunks stream))))
+    (declare (ignore provider))
     (handler-case
         (loop
           (let ((line (read-line http-stream nil :eof)))
@@ -172,6 +181,50 @@ Returns:
                      (setf (chunk-content chunk) (stream-accumulated-content stream))
                      (push chunk (stream-chunks stream))
                      (return chunk))))))))
+      (error (e)
+        (setf (stream-state stream) :error)
+        (setf (stream-error-condition stream) e)
+        (ignore-errors (close http-stream))
+        nil))))
+
+(defun read-anthropic-stream-chunk (stream)
+  "Read next chunk from Anthropic streaming response."
+  (when (stream-closed-p stream)
+    (return-from read-anthropic-stream-chunk nil))
+
+  (let ((http-stream (stream-http-stream stream))
+        (index (length (stream-chunks stream)))
+        (current-event nil))
+    (handler-case
+        (loop
+          (let ((line (read-line http-stream nil :eof)))
+            (when (eq line :eof)
+              (setf (stream-state stream) :closed)
+              (return nil))
+
+            (let ((parsed (parse-sse-line line)))
+              (cond
+                ;; Event type line
+                ((and parsed (eq (car parsed) :event))
+                 (setf current-event (cdr parsed)))
+
+                ;; Data line with event type
+                ((and parsed (eq (car parsed) :data) current-event)
+                 (let ((chunk (parse-anthropic-stream-event current-event (cdr parsed) index)))
+                   (setf current-event nil)
+                   (cond
+                     ((eq chunk :done)
+                      (setf (stream-state stream) :closed)
+                      (close http-stream)
+                      (return nil))
+                     (chunk
+                      (setf (stream-accumulated-content stream)
+                            (concatenate 'string
+                                        (stream-accumulated-content stream)
+                                        (chunk-delta chunk)))
+                      (setf (chunk-content chunk) (stream-accumulated-content stream))
+                      (push chunk (stream-chunks stream))
+                      (return chunk)))))))))
       (error (e)
         (setf (stream-state stream) :error)
         (setf (stream-error-condition stream) e)

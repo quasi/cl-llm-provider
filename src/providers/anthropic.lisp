@@ -200,6 +200,63 @@
                                  :name (gethash "name" block)
                                  :arguments (gethash "input" block)))))
 
+(defmethod send-streaming-request ((provider anthropic-provider) messages
+                                   &key model max-tokens temperature
+                                        system tools tool-choice stop)
+  "Send streaming completion request to Anthropic."
+  (let* ((url (format nil "~A/messages" (provider-base-url provider)))
+         (headers (append
+                   (make-http-headers provider)
+                   (list (cons "anthropic-version" "2023-06-01"))))
+         (body (make-hash-table :test 'equal)))
+
+    ;; Build request body
+    (setf (gethash "model" body) (or model (provider-default-model provider) "claude-3-sonnet-20240229"))
+    (setf (gethash "max_tokens" body) (or max-tokens 4096))
+    (setf (gethash "stream" body) t)
+
+    (when system
+      (setf (gethash "system" body) system))
+
+    (setf (gethash "messages" body)
+          (map 'vector #'plist-to-hash messages))
+
+    (when temperature
+      (setf (gethash "temperature" body) temperature))
+    (when stop
+      (setf (gethash "stop_sequences" body) (ensure-list stop)))
+    (when tools
+      (setf (gethash "tools" body)
+            (map 'vector (lambda (tool) (translate-tool-to-provider provider tool)) tools)))
+    (when tool-choice
+      (setf (gethash "tool_choice" body)
+            (etypecase tool-choice
+              (keyword (plist-to-hash
+                        (list :type (string-downcase (symbol-name tool-choice)))))
+              (string (plist-to-hash
+                       (list :type "tool" :name tool-choice))))))
+
+    ;; Make streaming request
+    (let ((encoded-body (with-output-to-string (s)
+                         (yason:encode body s))))
+      (multiple-value-bind (response-stream status-code)
+          (dex:post url
+                    :headers headers
+                    :content encoded-body
+                    :want-stream t)
+        (if (and (>= status-code 200) (< status-code 300))
+            (make-instance 'completion-stream
+                           :provider provider
+                           :model (or model (provider-default-model provider))
+                           :http-stream response-stream
+                           :state :open)
+            (handle-http-error status-code
+                              (handler-case
+                                  (let ((body-text (alexandria:read-stream-content-into-string response-stream)))
+                                    (yason:parse body-text))
+                                (error () "Stream error"))
+                              provider))))))
+
 ;; Anthropic doesn't support embeddings yet, use default error
 (defmethod send-embedding-request ((provider anthropic-provider) input
                                    &key model dimensions)

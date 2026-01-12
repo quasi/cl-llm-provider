@@ -180,6 +180,17 @@
                      (list (class-of provider) t)
                      nil))))
 
+;;; Task 1.7: Implement Anthropic Streaming Request
+
+(test anthropic-streaming-method-exists
+  "Test that Anthropic provider has streaming implementation"
+  (let ((provider (make-instance 'cl-llm-provider::anthropic-provider
+                                 :api-key "test-key")))
+    (is (find-method #'cl-llm-provider::send-streaming-request
+                     nil
+                     (list (class-of provider) t)
+                     nil))))
+
 ;;; Run Tests
 
 (format t "~%~%=== Running Streaming Test Suite ===~%~%")

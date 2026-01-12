@@ -174,6 +174,10 @@
    #:register-model-metadata
    #:get-model-metadata
 
+   ;; Token counting
+   #:count-tokens
+   #:count-tokens-with-system
+
    ;; Enhanced tools module (re-exported from cl-llm-provider.tools)
    ;; See cl-llm-provider.tools package for additional exports
 

@@ -30,6 +30,7 @@
                  (:file "protocol" :depends-on ("package" "types" "conditions"))
                  (:file "streaming" :depends-on ("package" "types" "protocol"))
                  (:file "model-registry" :depends-on ("package" "protocol"))
+                 (:file "tokenizer" :depends-on ("types"))
                  (:file "tools" :depends-on ("package" "types" "conditions"))
                  ;; Enhanced tools module (registry, validators, approval, hooks, execution)
                  (:module "tools-enhanced"

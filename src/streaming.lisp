@@ -136,3 +136,44 @@ Returns:
       ;; Other events (message_start, content_block_start, content_block_stop)
       ;; These are metadata, not content
       (t nil))))
+
+;;;; Stream Reading
+
+(defmethod read-stream-chunk ((stream completion-stream) &key timeout)
+  "Read next chunk from completion-stream."
+  (declare (ignore timeout))  ; TODO: implement timeout
+  (when (stream-closed-p stream)
+    (return-from read-stream-chunk nil))
+
+  (let ((http-stream (stream-http-stream stream))
+        (provider (stream-provider stream))
+        (index (length (stream-chunks stream))))
+    (handler-case
+        (loop
+          (let ((line (read-line http-stream nil :eof)))
+            (when (eq line :eof)
+              (setf (stream-state stream) :closed)
+              (return nil))
+
+            (let ((parsed (parse-sse-line line)))
+              (when (and parsed (eq (car parsed) :data))
+                (let ((chunk (parse-openai-stream-data (cdr parsed) index)))
+                  (cond
+                    ((eq chunk :done)
+                     (setf (stream-state stream) :closed)
+                     (close http-stream)
+                     (return nil))
+                    (chunk
+                     ;; Accumulate content
+                     (setf (stream-accumulated-content stream)
+                           (concatenate 'string
+                                       (stream-accumulated-content stream)
+                                       (chunk-delta chunk)))
+                     (setf (chunk-content chunk) (stream-accumulated-content stream))
+                     (push chunk (stream-chunks stream))
+                     (return chunk))))))))
+      (error (e)
+        (setf (stream-state stream) :error)
+        (setf (stream-error stream) e)
+        (ignore-errors (close http-stream))
+        nil))))

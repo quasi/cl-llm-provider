@@ -167,6 +167,19 @@
              "{\"type\":\"content_block_stop\",\"index\":0}"
              0))))
 
+;;; Task 1.6: Implement OpenAI Streaming Request
+
+(test openai-streaming-method-exists
+  "Test that OpenAI provider has streaming implementation"
+  (let ((provider (make-instance 'cl-llm-provider::openai-provider
+                                 :api-key "test-key"
+                                 :base-url "https://api.openai.com/v1")))
+    ;; Just test the method exists and can be called (will fail with no network)
+    (is (find-method #'cl-llm-provider::send-streaming-request
+                     nil
+                     (list (class-of provider) t)
+                     nil))))
+
 ;;; Run Tests
 
 (format t "~%~%=== Running Streaming Test Suite ===~%~%")

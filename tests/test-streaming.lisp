@@ -113,6 +113,60 @@
   (is (null (cl-llm-provider::parse-openai-stream-data "" 0)))
   (is (null (cl-llm-provider::parse-openai-stream-data nil 0))))
 
+;;; Task 1.5: Anthropic Stream Parser
+
+(test parse-anthropic-stream-event-content-block-delta
+  "Test Anthropic streaming content_block_delta event parsing"
+  (let* ((event-type "content_block_delta")
+         (data "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}")
+         (chunk (cl-llm-provider::parse-anthropic-stream-event event-type data 0)))
+    (is (not (null chunk)))
+    (is (string= "Hello" (cl-llm-provider::chunk-delta chunk)))
+    (is (string= "Hello" (cl-llm-provider::chunk-content chunk)))
+    (is (= 0 (cl-llm-provider::chunk-index chunk)))))
+
+(test parse-anthropic-stream-event-message-stop
+  "Test Anthropic streaming message_stop event returns :done"
+  (let* ((event-type "message_stop")
+         (data "{\"type\":\"message_stop\"}")
+         (result (cl-llm-provider::parse-anthropic-stream-event event-type data 0)))
+    (is (eq :done result))))
+
+(test parse-anthropic-stream-event-message-delta
+  "Test Anthropic streaming message_delta event with usage info"
+  (let* ((event-type "message_delta")
+         (data "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":42}}")
+         (chunk (cl-llm-provider::parse-anthropic-stream-event event-type data 5)))
+    (is (not (null chunk)))
+    (is (eq :end_turn (cl-llm-provider::chunk-finish-reason chunk)))
+    (is (= 5 (cl-llm-provider::chunk-index chunk)))
+    (is (equal 42 (getf (cl-llm-provider::chunk-usage chunk) :completion-tokens)))))
+
+(test parse-anthropic-stream-event-ping
+  "Test Anthropic streaming ping event returns nil"
+  (let* ((event-type "ping")
+         (data "{\"type\":\"ping\"}")
+         (result (cl-llm-provider::parse-anthropic-stream-event event-type data 0)))
+    (is (null result))))
+
+(test parse-anthropic-stream-event-metadata-events
+  "Test Anthropic metadata events (message_start, content_block_start, content_block_stop) return nil"
+  ;; message_start
+  (is (null (cl-llm-provider::parse-anthropic-stream-event
+             "message_start"
+             "{\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\",\"model\":\"claude-3-sonnet\"}}"
+             0)))
+  ;; content_block_start
+  (is (null (cl-llm-provider::parse-anthropic-stream-event
+             "content_block_start"
+             "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}"
+             0)))
+  ;; content_block_stop
+  (is (null (cl-llm-provider::parse-anthropic-stream-event
+             "content_block_stop"
+             "{\"type\":\"content_block_stop\",\"index\":0}"
+             0))))
+
 ;;; Run Tests
 
 (format t "~%~%=== Running Streaming Test Suite ===~%~%")

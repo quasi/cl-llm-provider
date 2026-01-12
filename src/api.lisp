@@ -195,3 +195,84 @@ Example:
                                                      :model mod
                                                      :dimensions dimensions)))
           (parse-embedding-response prov raw-response)))))
+
+(defun complete-stream (messages &key provider model max-tokens temperature
+                                      system tools tool-choice stop
+                                      on-chunk on-complete on-error)
+  "Send a streaming completion request to an LLM provider.
+
+MESSAGES - List of message plists ((:role \"user\" :content \"Hello\"))
+PROVIDER - Provider instance (uses *default-provider* if nil)
+MODEL - Model identifier (uses provider/global default if nil)
+MAX-TOKENS - Maximum tokens in response (integer)
+TEMPERATURE - Sampling temperature (0.0-2.0)
+SYSTEM - System prompt (string)
+TOOLS - List of tool definitions
+TOOL-CHOICE - Tool selection strategy
+STOP - Stop sequences
+
+CALLBACKS:
+ON-CHUNK - Function (lambda (chunk) ...) called for each chunk
+ON-COMPLETE - Function (lambda (full-content final-chunk) ...) called when done
+ON-ERROR - Function (lambda (error) ...) called on error
+
+Returns a completion-stream object.
+
+Example:
+  ;; Callback-based usage
+  (complete-stream messages
+    :on-chunk (lambda (chunk)
+                (format t \"~A\" (chunk-delta chunk)))
+    :on-complete (lambda (content final)
+                   (format t \"~%Done! ~D tokens~%\"
+                           (getf (chunk-usage final) :total-tokens))))
+
+  ;; Manual iteration
+  (let ((stream (complete-stream messages)))
+    (loop for chunk = (read-stream-chunk stream)
+          while chunk
+          do (format t \"~A\" (chunk-delta chunk))))"
+  (let* ((prov (or provider *default-provider*))
+         (mod (or model
+                  (and prov (provider-default-model prov))
+                  *default-model*))
+         (max-tok (or max-tokens *default-max-tokens*))
+         (temp (or temperature *default-temperature*)))
+
+    (unless prov
+      (error 'provider-configuration-error
+             :message "No provider specified and *default-provider* is nil"))
+
+    (unless mod
+      (error 'provider-configuration-error
+             :message "No model specified and no default model configured"))
+
+    ;; Validate tools if provided
+    (when tools
+      (validate-tools tools))
+
+    (let ((stream (send-streaming-request prov messages
+                                          :model mod
+                                          :max-tokens max-tok
+                                          :temperature temp
+                                          :system system
+                                          :tools tools
+                                          :tool-choice tool-choice
+                                          :stop stop)))
+
+      ;; If callbacks provided, start reading in current thread
+      (when (or on-chunk on-complete on-error)
+        (handler-case
+            (loop for chunk = (read-stream-chunk stream)
+                  while chunk
+                  do (when on-chunk (funcall on-chunk chunk))
+                  finally (when on-complete
+                            (funcall on-complete
+                                    (stream-accumulated-content stream)
+                                    (car (stream-chunks stream)))))
+          (error (e)
+            (if on-error
+                (funcall on-error e)
+                (error e)))))
+
+      stream)))

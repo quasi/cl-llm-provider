@@ -21,6 +21,21 @@
    #:complete
    #:embedding
 
+   ;; Streaming API
+   #:complete-stream
+   #:read-stream-chunk
+   #:stream-chunk
+   #:chunk-content
+   #:chunk-delta
+   #:chunk-finish-reason
+   #:chunk-index
+   #:chunk-usage
+   #:completion-stream
+   #:stream-open-p
+   #:stream-closed-p
+   #:stream-accumulated-content
+   #:stream-state
+
    ;; Tool calling
    #:define-tool
    #:tool-calls

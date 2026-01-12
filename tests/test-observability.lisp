@@ -128,6 +128,79 @@
     (fiveam:is (eq before-called t) "before-request hook should be invoked")
     (fiveam:is (eq error-called t) "on-error hook should be invoked")))
 
+(fiveam:test logging-hook-helper
+  "Test logging hook helper"
+  (let* ((log-output (make-string-output-stream))
+         (hooks (cl-llm-provider:make-logging-hooks :stream log-output))
+         (provider (make-instance 'cl-llm-provider::openai-provider
+                                  :api-key "test-key"
+                                  :model "gpt-4")))
+    ;; Invoke before-request hook
+    (cl-llm-provider::invoke-hooks hooks :before-request
+                                   provider "gpt-4" '((:role "user" :content "Hi")))
+    (let ((output (get-output-stream-string log-output)))
+      (fiveam:is (search "gpt-4" output) "Output should contain model name")
+      (fiveam:is (search "LLM Request" output) "Output should contain request marker"))))
+
+(fiveam:test logging-hook-logs-before-request
+  "Test that logging hook logs before request with correct details"
+  (let* ((log-output (make-string-output-stream))
+         (hooks (cl-llm-provider:make-logging-hooks :stream log-output))
+         (provider (make-instance 'cl-llm-provider::openai-provider
+                                  :api-key "test-key"
+                                  :model "gpt-4o")))
+    (cl-llm-provider::invoke-hooks hooks :before-request
+                                   provider "gpt-4o"
+                                   '((:role "user" :content "Test message 1")
+                                     (:role "assistant" :content "Reply")
+                                     (:role "user" :content "Test message 2")))
+    (let ((output (get-output-stream-string log-output)))
+      (fiveam:is (search "gpt-4o" output) "Should log model name")
+      (fiveam:is (search "3 messages" output) "Should log message count")
+      (fiveam:is (search "OpenAI" output) "Should log provider name"))))
+
+(fiveam:test logging-hook-logs-after-response
+  "Test that logging hook logs after response with timing and token info"
+  (let* ((log-output (make-string-output-stream))
+         (hooks (cl-llm-provider:make-logging-hooks :stream log-output))
+         (provider (make-instance 'cl-llm-provider::openai-provider
+                                  :api-key "test-key"))
+         (mock-response (make-instance 'cl-llm-provider::completion-response
+                                       :content "Hello"
+                                       :usage '(:total-tokens 42))))
+    (cl-llm-provider::invoke-hooks hooks :after-response
+                                   provider "gpt-4" mock-response 1.25)
+    (let ((output (get-output-stream-string log-output)))
+      (fiveam:is (search "LLM Response" output) "Should contain response marker")
+      (fiveam:is (search "1.25s" output) "Should log timing")
+      (fiveam:is (search "42 tokens" output) "Should log token count"))))
+
+(fiveam:test logging-hook-logs-errors
+  "Test that logging hook logs errors"
+  (let* ((log-output (make-string-output-stream))
+         (hooks (cl-llm-provider:make-logging-hooks :stream log-output))
+         (provider (make-instance 'cl-llm-provider::openai-provider
+                                  :api-key "test-key"))
+         (mock-error (make-condition 'simple-error
+                                     :format-control "Test error message")))
+    (cl-llm-provider::invoke-hooks hooks :on-error
+                                   provider "gpt-4" mock-error)
+    (let ((output (get-output-stream-string log-output)))
+      (fiveam:is (search "LLM Error" output) "Should contain error marker")
+      (fiveam:is (search "Test error message" output) "Should log error message"))))
+
+(fiveam:test logging-hook-debug-level
+  "Test that logging hook at debug level includes message content"
+  (let* ((log-output (make-string-output-stream))
+         (hooks (cl-llm-provider:make-logging-hooks :stream log-output :level :debug))
+         (provider (make-instance 'cl-llm-provider::openai-provider
+                                  :api-key "test-key")))
+    (cl-llm-provider::invoke-hooks hooks :before-request
+                                   provider "gpt-4"
+                                   '((:role "user" :content "Debug content")))
+    (let ((output (get-output-stream-string log-output)))
+      (fiveam:is (search "Debug content" output) "Debug level should include message content"))))
+
 ;;; Run tests
 (format t "~%~%Running observability tests...~%")
 (fiveam:run! 'observability-suite)

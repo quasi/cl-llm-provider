@@ -174,6 +174,6 @@ Returns:
                      (return chunk))))))))
       (error (e)
         (setf (stream-state stream) :error)
-        (setf (stream-error stream) e)
+        (setf (stream-error-condition stream) e)
         (ignore-errors (close http-stream))
         nil))))

@@ -180,6 +180,12 @@
    #:estimate-cost
    #:format-cost
 
+   ;; Observability
+   #:make-hooks
+   #:add-hook
+   #:remove-hook
+   #:*global-hooks*
+
    ;; Enhanced tools module (re-exported from cl-llm-provider.tools)
    ;; See cl-llm-provider.tools package for additional exports
 

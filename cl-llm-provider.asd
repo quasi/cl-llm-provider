@@ -26,6 +26,7 @@
                 ((:file "package")
                  (:file "conditions" :depends-on ("package"))
                  (:file "types" :depends-on ("package"))
+                 (:file "observability" :depends-on ("types"))
                  (:file "config" :depends-on ("package" "conditions"))
                  (:file "protocol" :depends-on ("package" "types" "conditions"))
                  (:file "streaming" :depends-on ("package" "types" "protocol"))

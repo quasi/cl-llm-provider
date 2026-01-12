@@ -177,6 +177,8 @@
    ;; Token counting
    #:count-tokens
    #:count-tokens-with-system
+   #:estimate-cost
+   #:format-cost
 
    ;; Enhanced tools module (re-exported from cl-llm-provider.tools)
    ;; See cl-llm-provider.tools package for additional exports

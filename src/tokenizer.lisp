@@ -77,3 +77,48 @@ Returns estimated token count (integer)."
          (+ *message-overhead-tokens* (estimate-tokens-from-text system))
          0)
      (count-tokens messages :model model :provider provider)))
+
+(defun estimate-cost (messages &key provider model system max-tokens)
+  "Estimate cost for a completion request.
+
+MESSAGES - List of message plists
+PROVIDER - Provider instance (required for pricing lookup)
+MODEL - Model identifier
+SYSTEM - System prompt (string)
+MAX-TOKENS - Expected output tokens (defaults to 1000)
+
+Returns (values input-cost output-cost-estimate total-estimate).
+All costs in USD.
+
+Returns NIL values if pricing unavailable for model.
+
+Example:
+  (multiple-value-bind (in out total)
+      (estimate-cost messages :provider *openai* :model \"gpt-4\" :max-tokens 500)
+    (format t \"Estimated cost: $~,4F~%\" total))"
+  (let* ((effective-model (or model
+                             (when provider (provider-default-model provider))))
+         (metadata (when (and provider effective-model)
+                    (model-metadata provider effective-model)))
+         (input-cost-per-1m (getf metadata :input-cost-per-1m-tokens))
+         (output-cost-per-1m (getf metadata :output-cost-per-1m-tokens)))
+
+    (if (and input-cost-per-1m output-cost-per-1m)
+        (let* ((input-tokens (count-tokens-with-system messages system
+                                                       :model effective-model
+                                                       :provider provider))
+               (output-tokens (or max-tokens 1000))
+               (input-cost (* input-tokens (/ input-cost-per-1m 1000000.0)))
+               (output-cost (* output-tokens (/ output-cost-per-1m 1000000.0))))
+          (values input-cost output-cost (+ input-cost output-cost)))
+        (values nil nil nil))))
+
+(defun format-cost (cost &optional (stream t))
+  "Format cost in USD for display.
+COST - Cost in USD (float)
+STREAM - Output stream
+
+Example: (format-cost 0.0025) => \"$0.0025\""
+  (if cost
+      (format stream "$~,4F" cost)
+      (format stream "N/A")))

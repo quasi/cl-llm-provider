@@ -55,6 +55,47 @@ PERFORMANCE - Optional performance timing plist (when *performance-profiling* is
 
 Returns an embedding-response object."))
 
+;;;; Streaming Protocol Methods
+
+(defgeneric send-streaming-request (provider messages &key model max-tokens
+                                                          temperature system tools
+                                                          tool-choice stop)
+  (:documentation "Send a streaming completion request to PROVIDER.
+
+Returns a completion-stream object that can be read chunk-by-chunk.
+
+PROVIDER - Provider instance
+MESSAGES - List of message plists
+MODEL - Model identifier (string)
+MAX-TOKENS - Maximum tokens in response
+TEMPERATURE - Sampling temperature (float 0.0-2.0)
+SYSTEM - System prompt (string)
+TOOLS - List of tool-definition objects
+TOOL-CHOICE - Tool selection strategy
+STOP - Stop sequences
+
+Returns a completion-stream object.
+Signals provider-api-error on HTTP connection errors."))
+
+(defgeneric parse-stream-chunk (provider raw-chunk stream)
+  (:documentation "Parse a raw SSE/streaming chunk into a stream-chunk object.
+
+PROVIDER - Provider instance
+RAW-CHUNK - Raw string data from the stream
+STREAM - The completion-stream being read (for state tracking)
+
+Returns a stream-chunk object, or nil for keep-alive/empty chunks.
+Sets stream state to :closed when done signal received."))
+
+(defgeneric read-stream-chunk (stream &key timeout)
+  (:documentation "Read the next chunk from a completion-stream.
+
+STREAM - completion-stream object
+TIMEOUT - Maximum seconds to wait (nil = block indefinitely)
+
+Returns a stream-chunk object, or nil if stream is closed.
+Signals stream-error on read failures."))
+
 ;;;; Optional Protocol Methods (have default implementations)
 
 (defgeneric provider-default-base-url (provider)

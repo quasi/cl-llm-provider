@@ -62,6 +62,14 @@
     (is (not (cl-llm-provider::stream-open-p stream)))
     (is (cl-llm-provider::stream-closed-p stream))))
 
+;;; Task 1.3: Streaming Protocol Generic Functions
+
+(test streaming-protocol-exists
+  "Test that streaming protocol generic functions exist"
+  (is (fboundp 'cl-llm-provider::send-streaming-request))
+  (is (fboundp 'cl-llm-provider::parse-stream-chunk))
+  (is (fboundp 'cl-llm-provider::read-stream-chunk)))
+
 ;;; Run Tests
 
 (format t "~%~%=== Running Streaming Test Suite ===~%~%")

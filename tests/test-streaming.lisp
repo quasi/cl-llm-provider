@@ -42,6 +42,26 @@
     (is (null (cl-llm-provider::chunk-finish-reason chunk)))
     (is (= 0 (cl-llm-provider::chunk-index chunk)))))
 
+(test completion-stream-creation
+  "Test completion-stream object creation"
+  (let ((stream (make-instance 'cl-llm-provider::completion-stream
+                               :provider nil
+                               :model "test-model")))
+    (is (string= "test-model" (cl-llm-provider::stream-model stream)))
+    (is (eq :open (cl-llm-provider::stream-state stream)))
+    (is (null (cl-llm-provider::stream-chunks stream)))))
+
+(test completion-stream-state-transitions
+  "Test stream state management"
+  (let ((stream (make-instance 'cl-llm-provider::completion-stream
+                               :provider nil
+                               :model "test")))
+    (is (cl-llm-provider::stream-open-p stream))
+    (is (not (cl-llm-provider::stream-closed-p stream)))
+    (setf (cl-llm-provider::stream-state stream) :closed)
+    (is (not (cl-llm-provider::stream-open-p stream)))
+    (is (cl-llm-provider::stream-closed-p stream))))
+
 ;;; Run Tests
 
 (format t "~%~%=== Running Streaming Test Suite ===~%~%")

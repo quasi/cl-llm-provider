@@ -131,6 +131,50 @@
                   delta))
             (chunk-finish-reason chunk))))
 
+(defclass completion-stream ()
+  ((provider :initarg :provider
+             :reader stream-provider
+             :documentation "The provider this stream is from.")
+   (model :initarg :model
+          :reader stream-model
+          :documentation "Model identifier.")
+   (state :initarg :state
+          :initform :open
+          :accessor stream-state
+          :documentation "Stream state: :open, :closed, :error")
+   (chunks :initarg :chunks
+           :initform nil
+           :accessor stream-chunks
+           :documentation "List of received chunks (for accumulation).")
+   (accumulated-content :initarg :accumulated-content
+                        :initform ""
+                        :accessor stream-accumulated-content
+                        :documentation "Full accumulated text content.")
+   (http-stream :initarg :http-stream
+                :initform nil
+                :accessor stream-http-stream
+                :documentation "Underlying HTTP stream for reading.")
+   (error-condition :initarg :error-condition
+                    :initform nil
+                    :accessor stream-error-condition
+                    :documentation "Error condition if state is :error."))
+  (:documentation "Represents an active streaming completion response."))
+
+(defmethod print-object ((stream completion-stream) stream-out)
+  (print-unreadable-object (stream stream-out :type t)
+    (format stream-out "~A ~A (~D chunks)"
+            (stream-model stream)
+            (stream-state stream)
+            (length (stream-chunks stream)))))
+
+(defun stream-open-p (stream)
+  "Return T if STREAM is still open and receiving chunks."
+  (eq (stream-state stream) :open))
+
+(defun stream-closed-p (stream)
+  "Return T if STREAM is closed (completed or errored)."
+  (not (stream-open-p stream)))
+
 (defclass embedding-response ()
   ((embeddings :initarg :embeddings
                :reader response-embeddings

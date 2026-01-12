@@ -14,6 +14,7 @@
 (load "src/conditions.lisp")
 (load "src/types.lisp")
 (load "src/protocol.lisp")
+(load "src/streaming.lisp")
 (load "src/api.lisp")
 (load "src/tools.lisp")
 (load "src/config.lisp")
@@ -69,6 +70,48 @@
   (is (fboundp 'cl-llm-provider::send-streaming-request))
   (is (fboundp 'cl-llm-provider::parse-stream-chunk))
   (is (fboundp 'cl-llm-provider::read-stream-chunk)))
+
+;;; Task 1.4: SSE Parser for OpenAI-Compatible Streams
+
+(test parse-sse-line
+  "Test SSE line parsing"
+  (is (equal '(:data . "{\"id\":\"1\"}")
+             (cl-llm-provider::parse-sse-line "data: {\"id\":\"1\"}")))
+  (is (equal '(:data . "[DONE]")
+             (cl-llm-provider::parse-sse-line "data: [DONE]")))
+  (is (null (cl-llm-provider::parse-sse-line "")))
+  (is (null (cl-llm-provider::parse-sse-line ": keep-alive"))))
+
+(test parse-sse-line-event-type
+  "Test SSE event type line parsing"
+  (is (equal '(:event . "content_block_delta")
+             (cl-llm-provider::parse-sse-line "event: content_block_delta")))
+  (is (equal '(:event . "message_stop")
+             (cl-llm-provider::parse-sse-line "event: message_stop"))))
+
+(test parse-openai-stream-chunk
+  "Test OpenAI streaming chunk parsing"
+  (let* ((raw-data "{\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}")
+         (chunk (cl-llm-provider::parse-openai-stream-data raw-data 0)))
+    (is (string= "Hello" (cl-llm-provider::chunk-delta chunk)))
+    (is (null (cl-llm-provider::chunk-finish-reason chunk)))))
+
+(test parse-openai-stream-done
+  "Test OpenAI stream completion detection"
+  (let ((chunk (cl-llm-provider::parse-openai-stream-data "[DONE]" 0)))
+    (is (eq :done chunk))))
+
+(test parse-openai-stream-with-finish-reason
+  "Test OpenAI streaming chunk with finish reason"
+  (let* ((raw-data "{\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}")
+         (chunk (cl-llm-provider::parse-openai-stream-data raw-data 5)))
+    (is (eq :stop (cl-llm-provider::chunk-finish-reason chunk)))
+    (is (= 5 (cl-llm-provider::chunk-index chunk)))))
+
+(test parse-openai-stream-empty-data
+  "Test OpenAI streaming chunk with empty/nil data"
+  (is (null (cl-llm-provider::parse-openai-stream-data "" 0)))
+  (is (null (cl-llm-provider::parse-openai-stream-data nil 0))))
 
 ;;; Run Tests
 

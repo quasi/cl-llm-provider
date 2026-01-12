@@ -28,6 +28,7 @@
                  (:file "types" :depends-on ("package"))
                  (:file "config" :depends-on ("package" "conditions"))
                  (:file "protocol" :depends-on ("package" "types" "conditions"))
+                 (:file "streaming" :depends-on ("package" "types" "protocol"))
                  (:file "model-registry" :depends-on ("package" "protocol"))
                  (:file "tools" :depends-on ("package" "types" "conditions"))
                  ;; Enhanced tools module (registry, validators, approval, hooks, execution)

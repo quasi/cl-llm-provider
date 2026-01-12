@@ -63,7 +63,8 @@ Example:
     provider))
 
 (defun complete (messages &key provider model max-tokens temperature
-                              system tools tool-choice stop)
+                              system tools tool-choice stop
+                              hooks on-request on-response on-error)
   "Send a completion request to an LLM provider.
 
 MESSAGES - List of message plists ((:role \"user\" :content \"Hello\"))
@@ -75,6 +76,12 @@ SYSTEM - System prompt (string)
 TOOLS - List of tool definitions
 TOOL-CHOICE - Tool selection strategy (keyword, string, or nil)
 STOP - Stop sequences (string or list)
+
+OBSERVABILITY:
+HOOKS - hooks structure from make-hooks
+ON-REQUEST - Callback (lambda (request-plist) ...) before request
+ON-RESPONSE - Callback (lambda (response timing) ...) after response
+ON-ERROR - Callback (lambda (error) ...) on error
 
 Returns a completion-response object.
 
@@ -98,13 +105,27 @@ Example:
   ;; Multi-turn conversation
   (complete '((:role \"user\" :content \"What is 2+2?\")
               (:role \"assistant\" :content \"2+2 equals 4.\")
-              (:role \"user\" :content \"And if you add 3?\")))"
+              (:role \"user\" :content \"And if you add 3?\"))
+
+  ;; With observability hooks
+  (complete messages
+            :hooks my-hooks
+            :on-request (lambda (info)
+                         (format t \"Sending request to ~A~%\" (getf info :provider)))
+            :on-response (lambda (response timing)
+                          (format t \"Got response in ~,2Fs~%\" timing)))"
   (let* ((prov (or provider *default-provider*))
          (mod (or model
                   (and prov (provider-default-model prov))
                   *default-model*))
          (max-tok (or max-tokens *default-max-tokens*))
-         (temp (or temperature *default-temperature*)))
+         (temp (or temperature *default-temperature*))
+         (all-hooks (or hooks *global-hooks*))
+         (start-time (get-internal-real-time))
+         (request-info (list :provider (when prov (provider-type prov))
+                            :model mod
+                            :message-count (length messages)
+                            :has-tools (not (null tools)))))
 
     (unless prov
       (error 'provider-configuration-error
@@ -118,33 +139,59 @@ Example:
     (when tools
       (validate-tools tools))
 
-    ;; Send request and parse response (with performance tracking if enabled)
-    (if *performance-profiling*
-        (let ((*performance-stats* (make-performance-stats)))
-          (let* ((raw-response (send-completion-request prov messages
-                                                         :model mod
-                                                         :max-tokens max-tok
-                                                         :temperature temp
-                                                         :system system
-                                                         :tools tools
-                                                         :tool-choice tool-choice
-                                                         :stop stop))
-                 (response (with-performance-timing (:decode-time)
-                             (parse-completion-response prov raw-response
-                                                       :performance nil))))
-            ;; Update response with complete performance stats (including decode time)
-            (setf (slot-value response 'performance) (get-performance-stats))
-            response))
-        ;; No profiling - standard path
-        (let ((raw-response (send-completion-request prov messages
-                                                      :model mod
-                                                      :max-tokens max-tok
-                                                      :temperature temp
-                                                      :system system
-                                                      :tools tools
-                                                      :tool-choice tool-choice
-                                                      :stop stop)))
-          (parse-completion-response prov raw-response)))))
+    ;; Invoke before-request hooks
+    (when all-hooks
+      (invoke-hooks all-hooks :before-request prov mod messages))
+    (when on-request
+      (funcall on-request request-info))
+
+    (handler-case
+        ;; Send request and parse response (with performance tracking if enabled)
+        (let ((response
+                (if *performance-profiling*
+                    (let ((*performance-stats* (make-performance-stats)))
+                      (let* ((raw-response (send-completion-request prov messages
+                                                                     :model mod
+                                                                     :max-tokens max-tok
+                                                                     :temperature temp
+                                                                     :system system
+                                                                     :tools tools
+                                                                     :tool-choice tool-choice
+                                                                     :stop stop))
+                             (resp (with-performance-timing (:decode-time)
+                                     (parse-completion-response prov raw-response
+                                                               :performance nil))))
+                        ;; Update response with complete performance stats (including decode time)
+                        (setf (slot-value resp 'performance) (get-performance-stats))
+                        resp))
+                    ;; No profiling - standard path
+                    (let ((raw-response (send-completion-request prov messages
+                                                                  :model mod
+                                                                  :max-tokens max-tok
+                                                                  :temperature temp
+                                                                  :system system
+                                                                  :tools tools
+                                                                  :tool-choice tool-choice
+                                                                  :stop stop)))
+                      (parse-completion-response prov raw-response))))
+              (timing (/ (- (get-internal-real-time) start-time)
+                        internal-time-units-per-second)))
+
+          ;; Invoke after-response hooks
+          (when all-hooks
+            (invoke-hooks all-hooks :after-response prov mod response timing))
+          (when on-response
+            (funcall on-response response timing))
+
+          response)
+
+      (error (e)
+        ;; Invoke error hooks
+        (when all-hooks
+          (invoke-hooks all-hooks :on-error prov mod e))
+        (when on-error
+          (funcall on-error e))
+        (error e)))))
 
 (defun embedding (input &key provider model dimensions)
   "Generate vector embeddings for text.

@@ -276,7 +276,7 @@ Chunk count: 9
 
     ;; Use invalid API key
     (handler-case
-        (let* ((bad-provider (make-instance 'openai-provider
+        (let* ((bad-provider (make-provider :openai
                                            :api-key "sk-invalid-key-12345"
                                            :model "gpt-4o-mini"))
                (stream (complete-stream
@@ -704,7 +704,7 @@ Example budget validation function:
     (format t "~%Making failing request...~%")
     (handler-case
         (complete '((:role "user" :content "Hello"))
-                  :provider (make-instance 'openai-provider
+                  :provider (make-provider :openai
                                           :api-key "invalid"
                                           :model "gpt-4o-mini")
                   :hooks hooks)

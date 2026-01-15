@@ -21,6 +21,10 @@ Keys are model name strings, values are plists with:
   "Registry of Anthropic model metadata.
 Keys are model name strings, values are plists with same schema as *openai-model-registry*.")
 
+(defvar *gemini-model-registry* (make-hash-table :test 'equal)
+  "Registry of Google Gemini model metadata.
+Keys are model name strings, values are plists with same schema as *openai-model-registry*.")
+
 (defun register-model-metadata (registry model-name metadata)
   "Register METADATA for MODEL-NAME in REGISTRY.
 METADATA should be a plist with keys like :context-window, :max-output-tokens, etc."
@@ -221,3 +225,41 @@ METADATA should be a plist with keys like :context-window, :max-output-tokens, e
     :supports-vision t
     :input-cost-per-1m-tokens 0.25
     :output-cost-per-1m-tokens 1.25))
+
+;;; ============================================================
+;;; Google Gemini Models
+;;; ============================================================
+
+;; Gemini 3 Flash
+(register-model-metadata *gemini-model-registry* "gemini-3-flash-preview"
+  '(:context-window 1048576
+    :max-output-tokens 8192
+    :supports-tools t
+    :supports-vision t
+    :input-cost-per-1m-tokens 0.075
+    :output-cost-per-1m-tokens 0.30))
+
+;; Gemini 3 Pro
+(register-model-metadata *gemini-model-registry* "gemini-3-pro-preview"
+  '(:context-window 2097152
+    :max-output-tokens 8192
+    :supports-tools t
+    :supports-vision t
+    :supports-audio t
+    :input-cost-per-1m-tokens 1.25
+    :output-cost-per-1m-tokens 5.00))
+
+;; Gemini 2.0 Flash (Experimental)
+(register-model-metadata *gemini-model-registry* "gemini-2.0-flash-exp"
+  '(:context-window 1048576
+    :max-output-tokens 8192
+    :supports-tools t
+    :supports-vision t
+    :input-cost-per-1m-tokens 0.075
+    :output-cost-per-1m-tokens 0.30))
+
+;; Gemini Embedding
+(register-model-metadata *gemini-model-registry* "gemini-embedding-001"
+  '(:output-dimensions 768
+    :input-cost-per-1m-tokens 0.0
+    :output-cost-per-1m-tokens 0.0))

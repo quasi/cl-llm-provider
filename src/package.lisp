@@ -172,6 +172,7 @@
    #:model-metadata
    #:*openai-model-registry*
    #:*anthropic-model-registry*
+   #:*gemini-model-registry*
    #:register-model-metadata
    #:get-model-metadata
 

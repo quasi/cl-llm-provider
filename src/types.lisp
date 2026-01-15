@@ -45,6 +45,10 @@
   ()
   (:documentation "OpenAI-compatible API provider (e.g., Groq, Together, vLLM)."))
 
+(defclass gemini-provider (llm-provider)
+  ()
+  (:documentation "Google Gemini API provider using OpenAI-compatible endpoint."))
+
 ;;;; Response Types
 
 (defclass completion-response ()

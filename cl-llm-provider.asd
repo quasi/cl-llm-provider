@@ -52,7 +52,8 @@
                    (:file "openai")
                    (:file "ollama")
                    (:file "openrouter")
-                   (:file "openai-compatible")))
+                   (:file "openai-compatible")
+                   (:file "gemini")))
                  (:file "api" :depends-on ("package" "types" "conditions" "protocol" "config" "tools" "providers")))))
   :in-order-to ((test-op (test-op "cl-llm-provider/test"))))
 

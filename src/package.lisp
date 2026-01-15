@@ -70,6 +70,7 @@
    #:ollama-provider
    #:openrouter-provider
    #:openai-compatible-provider
+   #:gemini-provider
 
    ;; Provider accessors
    #:provider-api-key

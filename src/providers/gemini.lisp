@@ -203,3 +203,62 @@ Reuses OpenAI request format since Gemini's /v1beta/openai/ endpoint is compatib
                               (when-let ((object (gethash "object" raw-response)))
                                 (setf (getf metadata :object) object))
                               metadata))))
+
+;;; Streaming Protocol
+
+(defmethod send-streaming-request ((provider gemini-provider) messages
+                                   &key model max-tokens temperature
+                                        system tools tool-choice stop)
+  "Send streaming completion request to Gemini."
+  (let* ((url (format nil "~A/chat/completions" (provider-base-url provider)))
+         (headers (make-http-headers provider))
+         (body (make-hash-table :test 'equal)))
+
+    ;; Build request body (OpenAI format with stream=true)
+    (setf (gethash "model" body) (or model (provider-default-model provider) "gemini-3-flash-preview"))
+    (setf (gethash "stream" body) t)  ; Enable streaming
+
+    ;; Convert messages, prepending system if provided
+    (let ((all-messages (if system
+                           (cons (list :role "system" :content system) messages)
+                           messages)))
+      (setf (gethash "messages" body)
+            (map 'vector #'plist-to-hash all-messages)))
+
+    (when max-tokens
+      (setf (gethash "max_tokens" body) max-tokens))
+    (when temperature
+      (setf (gethash "temperature" body) temperature))
+    (when stop
+      (setf (gethash "stop" body) (ensure-list stop)))
+    (when tools
+      (setf (gethash "tools" body)
+            (map 'vector (lambda (tool) (translate-tool-to-provider provider tool)) tools)))
+    (when tool-choice
+      (setf (gethash "tool_choice" body)
+            (etypecase tool-choice
+              (keyword (string-downcase (symbol-name tool-choice)))
+              (string (plist-to-hash (list :type "function"
+                                           :function (list :name tool-choice)))))))
+
+    ;; Make streaming HTTP request
+    (let ((encoded-body (with-output-to-string (s)
+                         (yason:encode body s))))
+      (multiple-value-bind (response-stream status-code response-headers)
+          (dex:post url
+                    :headers headers
+                    :content encoded-body
+                    :want-stream t)
+        (declare (ignore response-headers))
+        (if (and (>= status-code 200) (< status-code 300))
+            (make-instance 'completion-stream
+                           :provider provider
+                           :model (or model (provider-default-model provider))
+                           :http-stream response-stream
+                           :state :open)
+            (handle-http-error status-code
+                              (handler-case
+                                  (let ((body-text (alexandria:read-stream-content-into-string response-stream)))
+                                    (yason:parse body-text))
+                                (error () "Stream error"))
+                              provider))))))

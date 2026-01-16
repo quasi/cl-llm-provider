@@ -1,0 +1,27 @@
+feature:
+  name: streaming
+  version: 0.1.0
+  status: draft
+  description: |
+    Streaming completion responses with server-sent events (SSE), chunk-by-chunk
+    reading, and state management. Supports accumulation, finish reasons, and
+    usage tracking.
+
+depends_on:
+  core: true
+  features:
+    - providers
+
+contracts: []
+# Will be populated during Pass 2:
+# - completion-stream
+# - stream-chunk
+# - streaming-protocol
+
+properties: []
+# Will be populated during Pass 4:
+# - stream-state-transitions
+# - chunk-ordering
+
+scenarios: []
+# Will be populated during Pass 3

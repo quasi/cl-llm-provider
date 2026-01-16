@@ -1,0 +1,36 @@
+feature:
+  name: providers
+  version: 0.2.0
+  status: stable
+  description: |
+    Multi-provider support implementing the protocol for Anthropic Claude,
+    OpenAI GPT, Google Gemini, Ollama local models, OpenRouter gateway, and
+    OpenAI-compatible APIs (Groq, Together, vLLM). Includes provider
+    introspection and capabilities.
+  changelog: CHANGELOG.md
+  last_updated: 2026-01-16
+
+depends_on:
+  core: true
+  features: []
+
+contracts:
+  - provider-protocol  # Generic function protocol for all providers
+  - gemini-api        # Google Gemini API specifics
+
+# Future contracts (per-provider specifics):
+# - anthropic-api
+# - openai-api
+# - ollama-api
+# - openrouter-api
+
+properties: []
+# Will be populated during Pass 4:
+# - protocol-conformance
+# - provider-substitutability
+
+scenarios:
+  - gemini-provider-usage  # Usage scenarios for Gemini provider
+
+decisions:
+  - gemini-implementation-strategy  # Strategy for implementing Gemini using OpenAI-compatible endpoint

@@ -1,0 +1,30 @@
+feature:
+  name: tools
+  version: 0.1.0
+  status: draft
+  description: |
+    Tool definition, validation, approval workflows, and execution system.
+    Supports safety levels, parameter validation, lifecycle hooks, and
+    registry-based management. Includes enhanced tools module with categories,
+    validators, approval, and execution.
+
+depends_on:
+  core: true
+  features: []
+
+contracts: []
+# Will be populated during Pass 2:
+# - tool-definition
+# - tool-call
+# - tool-result
+# - tool-registry
+# - tool-validation
+# - tool-approval
+
+properties: []
+# Will be populated during Pass 4:
+# - tool-safety-enforcement
+# - parameter-validation-completeness
+
+scenarios: []
+# Will be populated during Pass 3

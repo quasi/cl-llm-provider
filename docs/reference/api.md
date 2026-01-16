@@ -100,6 +100,7 @@ Create a provider instance.
 **Types**:
 - `:anthropic` - Anthropic (Claude)
 - `:openai` - OpenAI (GPT)
+- `:gemini` - Google Gemini
 - `:ollama` - Ollama (local)
 - `:openrouter` - OpenRouter
 - `:openai-compatible` - Generic OpenAI-compatible
@@ -117,6 +118,9 @@ Create a provider instance.
 ;; OpenAI with model override
 (make-provider :openai :model "gpt-4")
 
+;; Google Gemini
+(make-provider :gemini :model "gemini-3-flash-preview")
+
 ;; Ollama local
 (make-provider :ollama :base-url "http://localhost:11434")
 
@@ -125,6 +129,16 @@ Create a provider instance.
               :base-url "https://api.example.com/v1"
               :api-key "sk-...")
 ```
+
+**Gemini-specific parameters:**
+- `:base-url` - Custom API endpoint (default: `https://generativelanguage.googleapis.com/v1beta/openai/`)
+- `:api-key` - Gemini API key (falls back to `GEMINI_API_KEY` env var)
+- `:model` - Default model (e.g., "gemini-3-flash-preview", "gemini-3-pro-preview")
+
+**Available Gemini models:**
+- `gemini-3-flash-preview` - Fast, cost-effective model (1M token context)
+- `gemini-3-pro-preview` - Advanced model (2M token context)
+- `gemini-embedding-001` - Text embeddings (768 dimensions)
 
 ### `provider-api-key`
 
@@ -314,6 +328,7 @@ All inherit from `error`. Catch with `handler-case`:
 
 - `ANTHROPIC_API_KEY` - Anthropic API key
 - `OPENAI_API_KEY` - OpenAI API key
+- `GEMINI_API_KEY` - Google Gemini API key
 - `OPENROUTER_API_KEY` - OpenRouter API key
 - `OLLAMA_BASE_URL` - Ollama base URL (default: http://localhost:11434)
 

@@ -28,6 +28,9 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 # Or for OpenAI (GPT-4, etc.)
 export OPENAI_API_KEY="sk-..."
 
+# Or for Google Gemini
+export GEMINI_API_KEY="your-gemini-key"
+
 # Or for local Ollama (no key needed)
 export OLLAMA_BASE_URL="http://localhost:11434"
 ```
@@ -90,6 +93,9 @@ sbcl --noinform --non-interactive --load two-turn.lisp
 ;; Use OpenAI instead
 (complete messages :provider (make-provider :openai :model "gpt-4"))
 
+;; Use Google Gemini instead
+(complete messages :provider (make-provider :gemini :model "gemini-3-flash-preview"))
+
 ;; Use Ollama instead
 (complete messages :provider (make-provider :ollama :model "mistral"))
 ```
@@ -136,7 +142,7 @@ ollama serve
 
 **Error: `Unknown provider`**
 
-Check that you're using a valid provider symbol: `:anthropic`, `:openai`, `:ollama`, `:openrouter`, etc.
+Check that you're using a valid provider symbol: `:anthropic`, `:openai`, `:gemini`, `:ollama`, `:openrouter`, etc.
 
 ## What You Can Do Now
 

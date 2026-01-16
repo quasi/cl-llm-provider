@@ -6,7 +6,7 @@
 
 (in-package :cl-user)
 (defpackage cl-llm-provider-asd
-  (:use :cl :asdf))
+  (:use :cl :asdf :uiop))
 (in-package :cl-llm-provider-asd)
 
 (defsystem "cl-llm-provider"
@@ -64,10 +64,19 @@
                "fiveam")
   :components ((:module "tests"
                 :components
-                ((:file "test-tools")
-                 (:file "test-providers")
-                 (:file "test-integration")
-                 (:file "test-gemini-provider"))))
+                ((:file "test-gemini-provider")
+                 (:file "test-integration-full-flow")
+                 (:file "test-observability")
+                 (:file "test-provider-introspection")
+                 (:file "test-provider-protocols")
+                 (:file "test-request-response-handling")
+                 (:file "test-streaming")
+                 (:file "test-token-metadata-comprehensive")
+                 (:file "test-token-metadata-functional")
+                 (:file "test-tokenizer")
+                 (:file "test-tools-enhanced")
+                 (:file "test-tools-integration")
+                 (:file "test-tools-support"))))
   :perform (test-op (o c)
              (symbol-call :fiveam :run!
                           (find-symbol* :cl-llm-provider-suite :cl-llm-provider/test))))

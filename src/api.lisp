@@ -7,7 +7,7 @@
 (defun make-provider (provider-type &key api-key base-url model options)
   "Create a provider instance for API interactions.
 
-PROVIDER-TYPE - One of :anthropic, :openai, :ollama, :openrouter, :openai-compatible
+PROVIDER-TYPE - One of :anthropic, :gemini, :openai, :ollama, :openrouter, :openai-compatible
 API-KEY - API key (falls back to environment/config if nil)
 BASE-URL - Override default API endpoint
 MODEL - Default model for this provider
@@ -37,6 +37,7 @@ Example:
                  :model \"mixtral-8x7b-32768\")"
   (let* ((provider-class (ecase provider-type
                            (:anthropic 'anthropic-provider)
+                           (:gemini 'gemini-provider)
                            (:openai 'openai-provider)
                            (:ollama 'ollama-provider)
                            (:openrouter 'openrouter-provider)

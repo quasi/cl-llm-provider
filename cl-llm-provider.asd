@@ -64,11 +64,10 @@
                "fiveam")
   :components ((:module "tests"
                 :components
-                ((:file "package")
-                 (:file "test-tools" :depends-on ("package"))
-                 (:file "test-providers" :depends-on ("package"))
-                 (:file "test-integration" :depends-on ("package"))
-                 (:file "test-gemini-provider" :depends-on ("package")))))
+                ((:file "test-tools")
+                 (:file "test-providers")
+                 (:file "test-integration")
+                 (:file "test-gemini-provider"))))
   :perform (test-op (o c)
              (symbol-call :fiveam :run!
                           (find-symbol* :cl-llm-provider-suite :cl-llm-provider/test))))

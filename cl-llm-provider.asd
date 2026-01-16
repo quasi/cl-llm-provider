@@ -67,7 +67,8 @@
                 ((:file "package")
                  (:file "test-tools" :depends-on ("package"))
                  (:file "test-providers" :depends-on ("package"))
-                 (:file "test-integration" :depends-on ("package")))))
+                 (:file "test-integration" :depends-on ("package"))
+                 (:file "test-gemini-provider" :depends-on ("package")))))
   :perform (test-op (o c)
              (symbol-call :fiveam :run!
                           (find-symbol* :cl-llm-provider-suite :cl-llm-provider/test))))

@@ -83,7 +83,7 @@
          (format t "~%~%To create configuration file:~%")
          (format t "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%")
          (format t "1. Create directory:~%")
-         (format t "   mkdir -p ~/.config/cl-llm-provider~%")
+         (format t "   mkdir -p ~~/.config/cl-llm-provider~%")
          (format t "~%2. Create config file at:~%")
          (format t "   ~A~%" +default-config-file-path+)
          (format t "~%3. Add your API keys:~%")

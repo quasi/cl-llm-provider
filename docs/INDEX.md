@@ -36,9 +36,12 @@ Complete index of all cl-llm-provider documentation.
 
 | Document | Purpose |
 |----------|---------|
+| [Using Gemini Provider](how-to/using-gemini.md) | Setup, vision, models, patterns for Google Gemini |
 | [Tools: Advanced Features](how-to/tools.md) | Safety levels, validators, categories, approvals |
 | [Add a New Provider](how-to/add-provider.md) | Implement support for a new LLM provider |
 | [Error Handling](how-to/error-handling.md) | Rate limits, retries, circuit breakers, graceful degradation |
+| [Streaming](how-to/streaming.md) | Real-time streaming responses, callbacks, state management |
+| [Observability](how-to/observability.md) | Logging, metrics, request/response hooks |
 | [Testing](how-to/testing.md) | Unit tests, integration tests, mocking, performance tests |
 
 ### Explanation (Conceptual)
@@ -146,6 +149,7 @@ See [agent/README.md](agent/README.md) for agent documentation index.
 - [Reference: API - Error Types](reference/api.md#error-types)
 
 ### Providers
+- [How-To: Using Gemini](how-to/using-gemini.md) - Google Gemini setup and patterns
 - [Explanation: Providers](explanation/providers.md) - Compare providers
 - [How-To: Add Provider](how-to/add-provider.md) - Implement new provider
 - [Reference: API - Provider Functions](reference/api.md#provider-functions)
@@ -196,9 +200,12 @@ docs/
 │   └── 03-advanced.md          # Advanced features
 │
 ├── how-to/                      # Task-oriented guides
+│   ├── using-gemini.md         # Google Gemini provider guide
 │   ├── tools.md                # Advanced tool features
 │   ├── add-provider.md         # Implement new provider
 │   ├── error-handling.md       # Error patterns
+│   ├── streaming.md            # Streaming responses
+│   ├── observability.md        # Logging and metrics
 │   └── testing.md              # Testing guide
 │
 ├── explanation/                 # Conceptual understanding

@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Unified Common Lisp interface for multiple LLM providers.** Write once, switch providers with a single parameter. Works with Claude, GPT, Ollama, and any OpenAI-compatible API.
+**Unified Common Lisp interface for multiple LLM providers.** Write once, switch providers with a single parameter. Works with Claude, GPT, Gemini, Ollama, and any OpenAI-compatible API.
 
 ## Why Use This?
 
@@ -10,7 +10,7 @@ You want to use LLMs in your Common Lisp code, but you're tired of rewriting the
 
 **cl-llm-provider solves this by:**
 
-- **Single interface** - One `complete` and `embedding` call works across all providers (Anthropic, OpenAI, Ollama, OpenRouter, Groq, etc.)
+- **Single interface** - One `complete` and `embedding` call works across all providers (Anthropic, OpenAI, Gemini, Ollama, OpenRouter, Groq, etc.)
 - **Provider-agnostic messages** - Define conversations once, run them on any LLM
 - **Tool calling** - Define tools once, they work across Anthropic, OpenAI, Ollama formats automatically
 - **Smart error recovery** - Rate limits, auth failures, and API errors handled gracefully with Lisp restarts
@@ -180,22 +180,25 @@ See [docs/agent/README.md](docs/agent/README.md) for agent documentation index.
 
 ## Supported Providers
 
-| Provider | Text Completion | Embeddings | Tools |
-|----------|---|---|---|
-| **Anthropic** (Claude) | ✅ | ❌ | ✅ (native) |
-| **OpenAI** (GPT-4, etc.) | ✅ | ✅ | ✅ (function calling) |
-| **Ollama** (local models) | ✅ | ✅ | ✅ (OpenAI-compatible) |
-| **OpenRouter** | ✅ | ✅ | ✅ (multi-provider) |
-| **OpenAI-compatible** (Groq, Together, vLLM) | ✅ | ✅ | ✅ |
+| Provider | Text Completion | Embeddings | Tools | Streaming | Vision |
+|----------|---|---|---|---|---|
+| **Anthropic** (Claude) | ✅ | ❌ | ✅ (native) | ✅ | ✅ |
+| **OpenAI** (GPT-4, etc.) | ✅ | ✅ | ✅ (function calling) | ✅ | ✅ |
+| **Google Gemini** | ✅ | ✅ | ✅ (function calling) | ✅ | ✅ |
+| **Ollama** (local models) | ✅ | ✅ | ✅ (OpenAI-compatible) | ✅ | ❌ |
+| **OpenRouter** | ✅ | ✅ | ✅ (multi-provider) | ✅ | ✅ |
+| **OpenAI-compatible** (Groq, Together, vLLM) | ✅ | ✅ | ✅ | ✅ | Varies |
 
 ---
 
 ## Key Features at a Glance
 
 - **Message Normalization** - Convert between provider formats automatically
+- **Streaming Responses** - Real-time token-by-token output with callbacks
 - **Provider Introspection** - Query capabilities, model metadata, and configuration without trial-and-error
 - **Token Counting** - Accurate usage tracking for cost estimation
 - **Performance Profiling** - Optional timing breakdown for optimization
+- **Observability Hooks** - Before/after request callbacks for logging, metrics, debugging
 - **Comprehensive Error Handling** - Restarts for rate limits, auth failures, API errors
 - **Configuration via Lisp** - Full power of Lisp for provider setup
 - **Thread-Safe** - Safe for concurrent requests across threads
@@ -229,7 +232,6 @@ See `tests/README.md` for complete test documentation.
 
 These features are intentionally deferred to future versions:
 
-- Streaming responses
 - Audio/video/image processing
 - Automatic tool execution loops
 - Cost tracking and billing

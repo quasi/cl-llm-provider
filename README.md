@@ -4,6 +4,8 @@
 
 **Unified Common Lisp interface for multiple LLM providers.** Write once, switch providers with a single parameter. Works with Claude, GPT, Gemini, Ollama, and any OpenAI-compatible API.
 
+NOTE: Still alpha quality due to lack of verification of all features by humans. :-D . Lots of automated tests but manual testing still in sufficient. Please test test test and report issues.
+
 ## Why Use This?
 
 You want to use LLMs in your Common Lisp code, but you're tired of rewriting the same request/response handling for each provider's different API format.
@@ -180,14 +182,14 @@ See [docs/agent/README.md](docs/agent/README.md) for agent documentation index.
 
 ## Supported Providers
 
-| Provider | Text Completion | Embeddings | Tools | Streaming | Vision |
-|----------|---|---|---|---|---|
-| **Anthropic** (Claude) | ✅ | ❌ | ✅ (native) | ✅ | ✅ |
-| **OpenAI** (GPT-4, etc.) | ✅ | ✅ | ✅ (function calling) | ✅ | ✅ |
-| **Google Gemini** | ✅ | ✅ | ✅ (function calling) | ✅ | ✅ |
-| **Ollama** (local models) | ✅ | ✅ | ✅ (OpenAI-compatible) | ✅ | ❌ |
-| **OpenRouter** | ✅ | ✅ | ✅ (multi-provider) | ✅ | ✅ |
-| **OpenAI-compatible** (Groq, Together, vLLM) | ✅ | ✅ | ✅ | ✅ | Varies |
+| Provider | Text Completion | Embeddings | Tools | Streaming |
+|----------|---|---|---|---|
+| **Anthropic** (Claude) | ✅ | ❌ | ✅ (native) | ✅ |
+| **OpenAI** (GPT-4, etc.) | ✅ | ✅ | ✅ (function calling) | ✅ |
+| **Google Gemini** | ✅ | ✅ | ✅ (function calling) | ✅ |
+| **Ollama** (local models) | ✅ | ✅ | ✅ (OpenAI-compatible) | ✅ |
+| **OpenRouter** | ✅ | ✅ | ✅ (multi-provider) | ✅ |
+| **OpenAI-compatible** (Groq, Together, vLLM) | ✅ | ✅ | ✅ | ✅ |
 
 ---
 

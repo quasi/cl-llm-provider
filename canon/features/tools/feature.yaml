@@ -1,12 +1,14 @@
 feature:
   name: tools
-  version: 0.1.0
+  version: 0.2.0
   status: draft
   description: |
     Tool definition, validation, approval workflows, and execution system.
     Supports safety levels, parameter validation, lifecycle hooks, and
     registry-based management. Includes enhanced tools module with categories,
     validators, approval, and execution.
+
+    v0.2.0: Added :items property support for array parameters (DR-001).
 
 depends_on:
   core: true

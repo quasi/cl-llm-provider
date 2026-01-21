@@ -44,6 +44,7 @@
              (param-type (getf param :type))
              (param-desc (getf param :description))
              (param-enum (getf param :enum))
+             (param-items (getf param :items))
              (param-spec (make-hash-table :test 'equal)))
 
         (setf (gethash "type" param-spec)
@@ -60,6 +61,28 @@
 
         (when param-enum
           (setf (gethash "enum" param-spec) param-enum))
+
+        ;; For array types, include items schema (required by some providers)
+        ;; Default to string items if not specified
+        (when (eq param-type :array)
+          (let ((items-spec (make-hash-table :test 'equal)))
+            (if param-items
+                ;; Use provided items spec (e.g., :items (:type :string))
+                (progn
+                  (setf (gethash "type" items-spec)
+                        (ecase (getf param-items :type)
+                          (:string "string")
+                          (:integer "integer")
+                          (:number "number")
+                          (:boolean "boolean")
+                          (:array "array")
+                          (:object "object")))
+                  (when (getf param-items :description)
+                    (setf (gethash "description" items-spec)
+                          (getf param-items :description))))
+                ;; Default: array of strings
+                (setf (gethash "type" items-spec) "string"))
+            (setf (gethash "items" param-spec) items-spec)))
 
         (setf (gethash param-name (gethash "properties" input-schema))
               param-spec)))

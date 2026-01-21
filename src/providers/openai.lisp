@@ -243,21 +243,30 @@
     ;; Make streaming HTTP request
     (let ((encoded-body (with-output-to-string (s)
                          (yason:encode body s))))
-      (multiple-value-bind (response-stream status-code response-headers)
-          (dex:post url
-                    :headers headers
-                    :content encoded-body
-                    :want-stream t)
-        (declare (ignore response-headers))
-        (if (and (>= status-code 200) (< status-code 300))
-            (make-instance 'completion-stream
-                           :provider provider
-                           :model (or model (provider-default-model provider))
-                           :http-stream response-stream
-                           :state :open)
-            (handle-http-error status-code
-                              (handler-case
-                                  (let ((body-text (alexandria:read-stream-content-into-string response-stream)))
-                                    (yason:parse body-text))
-                                (error () "Stream error"))
-                              provider))))))
+      (handler-case
+          (multiple-value-bind (response-stream status-code response-headers)
+              (dex:post url
+                        :headers headers
+                        :content encoded-body
+                        :want-stream t)
+            (declare (ignore response-headers))
+            (if (and (>= status-code 200) (< status-code 300))
+                (make-instance 'completion-stream
+                               :provider provider
+                               :model (or model (provider-default-model provider))
+                               :http-stream response-stream
+                               :state :open)
+                (handle-http-error status-code
+                                  (handler-case
+                                      (let ((body-text (alexandria:read-stream-content-into-string response-stream)))
+                                        (yason:parse body-text))
+                                    (error ()
+                                      "Stream error"))
+                                  provider)))
+        ;; Handle HTTP errors raised by dexador (e.g., when want-stream is true)
+        (dex:http-request-failed (e)
+          (handle-http-error (dex:response-status e)
+                            (handler-case
+                                (yason:parse (dex:response-body e))
+                              (error () (dex:response-body e)))
+                            provider))))))

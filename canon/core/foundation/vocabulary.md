@@ -158,12 +158,20 @@ An ordered list of messages forming conversation context.
 A specification of a callable function containing:
 - `name` - String matching `^[a-zA-Z0-9_-]+$` (RULE-003)
 - `description` - Human-readable purpose
-- `parameters` - List of parameter specs with `:name`, `:type`, `:description`
+- `parameters` - List of parameter specs with `:name`, `:type`, `:description`, and optionally `:enum`, `:items`
 - `handler` - Optional function for execution
+
+**Parameter Specification**:
+- `:name` - Parameter name (string)
+- `:type` - One of `:string`, `:integer`, `:number`, `:boolean`, `:array`, `:object`
+- `:description` - Human-readable description
+- `:enum` - Optional list of allowed values
+- `:items` - Required for `:array` type: plist specifying element type, e.g., `(:type :string)`
 
 **Invariants**:
 - INV-007: Tool definitions are immutable after registration
 - RULE-011: Parameter types must be `:string`, `:integer`, `:number`, `:boolean`, `:array`, `:object`
+- RULE-016: Array parameters must have `:items` specification (defaults to string if omitted)
 
 **Code Location**: `src/tools.lisp`, `src/tools/`
 

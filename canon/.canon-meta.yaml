@@ -5,8 +5,8 @@ infrastructure:
 
 tracking:
   created: 2026-01-16T00:00:00Z
-  last_check: 2026-01-20T00:00:00Z
-  last_modified: 2026-01-20T00:00:00Z
+  last_check: 2026-01-21T00:00:00Z
+  last_modified: 2026-01-21T00:00:00Z
 
 checkpoints:
   - skill: canon-initiate
@@ -25,6 +25,24 @@ observations:
   state_file: .canon-initiation/observations.yaml
 
 changelog:
+  - date: 2026-01-21
+    type: context-manifests-generated
+    summary: "Generated .context.yaml for all 6 features with path mappings and token estimates"
+    skill: canon-check
+    artifacts:
+      - features/core-api/.context.yaml
+      - features/providers/.context.yaml
+      - features/tools/.context.yaml
+      - features/streaming/.context.yaml
+      - features/model-metadata/.context.yaml
+      - features/observability/.context.yaml
+
+  - date: 2026-01-21
+    type: artifact-added
+    artifact: README-CANON.md
+    summary: "Generated agent-oriented Canon documentation from template"
+    skill: canon-check
+
   - date: 2026-01-20
     type: verification-complete
     summary: "Comprehensive verification: 508/511 assertions passing (99.4%), all features conformant"
@@ -72,6 +90,13 @@ changelog:
     summary: "Canon extracted from existing Common Lisp codebase"
 
 issues_history:
+  - date: 2026-01-21
+    check_id: chk-20260121-001
+    issues_found: 0
+    warnings_found: 2
+    issues_fixed: 2
+    notes: "Health check performed: 2 warnings found (missing README-CANON.md, missing context manifests), both auto-fixed"
+
   - date: 2026-01-20
     check_id: chk-20260120-002
     issues_found: 0

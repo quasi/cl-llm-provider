@@ -1,0 +1,49 @@
+feature: observability
+canon_version: 0.2.0
+status: stable
+generated: 2026-01-21
+
+summary: |
+  Callback mechanisms for logging, tracing, and monitoring LLM API calls. Hook system
+  for request/response lifecycle events with built-in logging hooks and integration
+  points for external monitoring systems. Ensures hooks don't break requests and
+  provides safe error handling for monitoring failures.
+
+essential:
+  - path: ../../core/foundation/vocabulary.md
+    reason: Core domain terms (Performance Profiling, Response Metadata)
+    sections: [Observability Domain]
+
+  - path: feature.yaml
+    reason: Feature manifest showing dependencies on core-api and streaming
+
+  - path: vocabulary.md
+    reason: Observability-specific terminology
+
+  - path: contracts/hooks-api.md
+    reason: Hook system contract defining callback mechanisms
+
+  - path: properties/hook-safety.md
+    reason: Universal property ensuring hooks don't break requests
+
+reference:
+  - path: ../../features/core-api/contracts/complete.md
+    reason: Complete() function invokes observability hooks
+
+  - path: ../../features/streaming/properties/stream-state.md
+    reason: Stream chunk hooks for real-time monitoring
+
+  - path: ../../core/foundation/invariants.md
+    reason: INV-006 for performance profiling stats, RULE-009 for stats modification
+
+  - path: docs/how-to/observability.md
+    reason: User documentation for observability features (referenced in feature.yaml)
+
+token_estimate: 3702
+
+notes: |
+  Observability feature is stable (v1.0.0).
+  Has contract (hooks-api) and property (hook-safety).
+  Could add scenarios: logging-request-response, metrics-collection, error-tracking.
+  Implementation in src/observability.lisp.
+  Provides :on-request, :on-response, :on-error hooks and built-in logging.

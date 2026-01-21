@@ -1,0 +1,50 @@
+feature: tools
+canon_version: 0.2.0
+status: draft
+generated: 2026-01-21
+
+summary: |
+  Tool definition, validation, approval workflows, and execution system. Supports
+  safety levels (safe, moderate, dangerous), parameter validation, lifecycle hooks,
+  and registry-based management. Enhanced tools module includes categories, validators,
+  approval mechanisms, and execution handlers.
+
+essential:
+  - path: ../../core/foundation/vocabulary.md
+    reason: Core domain terms (Tool Definition, Tool Call, Tool Result, Safety Level)
+    sections: [Tool Domain]
+
+  - path: feature.yaml
+    reason: Feature manifest and planned contracts list
+
+  - path: vocabulary.md
+    reason: Tools-specific terminology and concepts
+
+  - path: properties/tool-definition.md
+    reason: Universal properties of tool definitions
+
+per_contract:
+  # No contracts implemented yet - using scenarios/properties
+  tool-validation:
+    - path: scenarios/tool-definition-and-validation.md
+      reason: Concrete examples of tool definition and validation flows
+
+reference:
+  - path: ../../core/foundation/invariants.md
+    reason: System-wide rules (RULE-003 tool naming, RULE-011 parameter types)
+
+  - path: ../../features/core-api/contracts/complete.md
+    reason: Complete() function uses tools parameter
+
+  - path: ../../core/contracts/shared-types.md
+    reason: Common type definitions for tool parameters
+
+token_estimate: 4352
+
+notes: |
+  Tools feature is in draft status (v0.1.0).
+  Currently has scenarios and properties but no formal contracts yet.
+  Planned contracts: tool-definition, tool-call, tool-result, tool-registry,
+  tool-validation, tool-approval.
+  Planned properties: tool-safety-enforcement, parameter-validation-completeness.
+  Implementation in src/tools.lisp and src/tools/ directory.

@@ -1,0 +1,39 @@
+feature: streaming
+canon_version: 0.2.0
+status: draft
+generated: 2026-01-21
+
+summary: |
+  Streaming completion responses with server-sent events (SSE), chunk-by-chunk reading,
+  and state management. Supports accumulation of partial responses, finish reason detection,
+  and usage tracking. Enables real-time response processing for long-form generations.
+
+essential:
+  - path: ../../core/foundation/vocabulary.md
+    reason: Core domain terms related to streaming
+    sections: [Protocol Domain, Request/Response Domain]
+
+  - path: feature.yaml
+    reason: Feature manifest showing dependency on providers
+
+  - path: vocabulary.md
+    reason: Streaming-specific terminology
+
+  - path: properties/stream-state.md
+    reason: Universal properties of stream state transitions
+
+reference:
+  - path: ../../features/providers/contracts/provider-protocol.md
+    reason: Streaming protocol methods (send-streaming-request, parse-stream-chunk, read-stream-chunk)
+
+  - path: ../../core/foundation/invariants.md
+    reason: System-wide rules affecting streaming behavior
+
+token_estimate: 2075
+
+notes: |
+  Streaming feature is in draft status (v0.1.0).
+  Currently has one property (stream-state) but no contracts or scenarios.
+  Planned contracts: completion-stream, stream-chunk, streaming-protocol.
+  Planned properties: stream-state-transitions, chunk-ordering.
+  Implementation involves SSE parsing and state management.

@@ -1,0 +1,53 @@
+feature: core-api
+canon_version: 0.2.0
+status: draft
+generated: 2026-01-21
+
+summary: |
+  Main user-facing API providing complete() and embedding() functions with provider
+  abstraction, configuration management, and observability hooks. The complete() function
+  supports multi-turn conversations, tool usage, and streaming responses. Abstracts
+  provider-specific details while preserving access to raw responses.
+
+essential:
+  - path: ../../core/foundation/vocabulary.md
+    reason: Core domain terms (Completion, Message, Response Object, Provider, etc.)
+    sections: [Request/Response Domain, Message Domain, Provider Domain, Observability Domain]
+
+  - path: feature.yaml
+    reason: Feature manifest showing dependencies on providers and tools
+
+  - path: vocabulary.md
+    reason: Core API-specific terms and definitions
+
+  - path: contracts/complete.md
+    reason: Primary contract for the complete() function
+
+per_contract:
+  complete:
+    - path: scenarios/multi-turn-conversation.md
+      reason: Demonstrates complete() usage in multi-turn conversation flows
+
+    - path: properties/token-counting.md
+      reason: Invariants for token counting in completion responses
+
+reference:
+  - path: ../../features/providers/contracts/provider-protocol.md
+    reason: Provider abstraction underlying complete() implementation
+
+  - path: ../../features/tools/vocabulary.md
+    reason: Tool definitions used in complete() tool parameter
+
+  - path: ../../features/observability/contracts/hooks-api.md
+    reason: Observability hooks invoked during complete() execution
+
+  - path: ../../core/foundation/invariants.md
+    reason: System-wide rules affecting API behavior
+
+token_estimate: 4415
+
+notes: |
+  Core-api feature is in draft status (v0.1.0).
+  Currently has complete() contract with scenario and property.
+  Planned contracts: complete-request, complete-response, embedding-request, embedding-response.
+  Planned properties: provider-abstraction-transparency, configuration-precedence.

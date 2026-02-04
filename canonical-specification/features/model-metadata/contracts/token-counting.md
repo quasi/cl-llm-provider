@@ -4,9 +4,6 @@ name: token-counting
 version: 0.1.0
 status: draft
 feature: model-metadata
-depends_on:
-  - core/foundation/vocabulary#token
-  - core/foundation/vocabulary#message
 ---
 
 # Token Counting Contract

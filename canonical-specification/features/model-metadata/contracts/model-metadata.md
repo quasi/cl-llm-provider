@@ -4,9 +4,6 @@ name: model-metadata
 version: 0.1.0
 status: draft
 feature: model-metadata
-depends_on:
-  - features/providers/contracts/provider-protocol
-  - core/foundation/vocabulary#model
 ---
 
 # Model Metadata Contract
@@ -272,6 +269,14 @@ When metadata is unavailable:
 3. **Conservative estimates**: When unsure, use higher costs/lower limits
 4. **Fallback chains**: Try specific version, then generic name, then defaults
 5. **Validation**: Check metadata exists before attempting operations
+
+## Error Conditions
+
+| Error | Condition | Recovery |
+|-------|-----------|----------|
+| `unknown-model` | Metadata requested for model not in registry | Use default metadata or register model |
+| `invalid-provider` | Provider argument is nil or not a provider instance | Pass valid provider |
+| `metadata-validation-failed` | Metadata missing required fields or has invalid values | Fix metadata before registration |
 
 ## Related Contracts
 

@@ -4,9 +4,6 @@ name: tool-result
 version: 0.1.0
 status: draft
 feature: tools
-depends_on:
-  - features/tools/contracts/tool-call
-  - core/foundation/vocabulary#tool-result
 ---
 
 # Tool Result Contract

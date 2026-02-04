@@ -4,9 +4,6 @@ name: completion-stream
 version: 0.1.0
 status: draft
 feature: streaming
-depends_on:
-  - features/core-api/contracts/complete
-  - core/foundation/vocabulary#stream
 ---
 
 # Completion Stream Contract

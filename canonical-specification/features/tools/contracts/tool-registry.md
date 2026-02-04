@@ -4,9 +4,6 @@ name: tool-registry
 version: 0.1.0
 status: draft
 feature: tools
-depends_on:
-  - features/tools/contracts/tool-definition
-  - core/foundation/vocabulary#registry
 ---
 
 # Tool Registry Contract
@@ -268,6 +265,15 @@ The global tool registry instance. Initialize with `(ensure-registry)` or manual
                      (list-tools *admin-registry*)
                      (list-tools *read-only-registry*)))
 ```
+
+## Error Conditions
+
+| Error | Condition | Recovery |
+|-------|-----------|----------|
+| `tool-already-registered` | Attempting to register a tool with existing name when `:replace` is nil | Use `:replace t` or choose different name |
+| `invalid-tool-definition` | Tool definition missing required fields or has invalid metadata | Fix tool definition before registration |
+| `tool-not-found` | Attempting to unregister or find non-existent tool | Check tool name spelling |
+| `invalid-registry` | Registry argument is not a hash-table | Pass valid registry object |
 
 ## Related Contracts
 

@@ -4,9 +4,6 @@ name: tool-call
 version: 0.1.0
 status: draft
 feature: tools
-depends_on:
-  - core/foundation/vocabulary#tool-call
-  - features/tools/contracts/tool-definition
 ---
 
 # Tool Call Contract

@@ -4,10 +4,6 @@ name: cost-estimation
 version: 0.1.0
 status: draft
 feature: model-metadata
-depends_on:
-  - features/model-metadata/contracts/token-counting
-  - features/model-metadata/contracts/model-metadata
-  - core/foundation/vocabulary#cost
 ---
 
 # Cost Estimation Contract
@@ -336,6 +332,16 @@ Format cost in USD for display.
 3. **Budget alerts**: Set thresholds and alert when exceeded
 4. **Model selection**: Compare costs across models for budget optimization
 5. **Pricing updates**: Review and update pricing metadata quarterly
+
+## Error Conditions
+
+| Error | Condition | Recovery |
+|-------|-----------|----------|
+| `missing-provider` | Provider argument is nil | Provide valid provider instance |
+| `unknown-model` | Model not found in registry (returns nil values) | Register model or use known model |
+| `missing-pricing` | Metadata exists but pricing fields are nil (returns nil values) | Update metadata with pricing information |
+| `invalid-messages` | Messages argument is not a list | Pass valid message list |
+| `invalid-max-tokens` | max-tokens is negative or non-numeric | Use positive integer for max-tokens |
 
 ## Related Contracts
 

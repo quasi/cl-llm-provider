@@ -3,9 +3,6 @@ type: scenario
 name: model-metadata-lookup
 version: 0.1.0
 feature: model-metadata
-covers:
-  - contracts/model-metadata
-  - contracts/model-registry
 tags:
   - happy-path
   - introspection

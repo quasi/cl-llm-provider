@@ -1,0 +1,110 @@
+principles:
+  - id: SIMPLICITY
+    name: Simplicity Over Complexity
+    description: |
+      Provide a simple, Lisp-idiomatic API that favors clarity and ease of use
+      over feature proliferation. The library should feel natural to Common Lisp
+      developers.
+    guardrails:
+      - Public API surface should remain minimal and focused
+      - Avoid unnecessary abstractions or indirection
+      - Use standard Common Lisp idioms (generic functions, conditions, etc.)
+      - Default behavior should handle common cases without configuration
+      - Power users can access lower-level protocols when needed
+
+  - id: PROVIDER_NEUTRALITY
+    name: Provider Neutrality
+    description: |
+      Support multiple LLM providers through a unified protocol without favoring
+      any specific provider. Users can switch providers with minimal code changes.
+    guardrails:
+      - All providers implement the same generic function protocol
+      - Provider-specific features exposed through standard capability queries
+      - No hardcoded assumptions about provider behavior in core API
+      - Provider implementations isolated in separate files
+      - Tests verify protocol compliance for each provider
+
+  - id: TRANSPARENCY
+    name: Transparency and Debuggability
+    description: |
+      Preserve provider responses, expose internal state, and make behavior
+      inspectable. Users should understand what's happening.
+    guardrails:
+      - Raw provider responses always accessible via response-raw
+      - No silent failures or hidden transformations
+      - Clear error messages with actionable information
+      - Conditions include context for debugging (tool name, model, etc.)
+      - Logging hooks available for request/response introspection
+
+  - id: IMMUTABILITY
+    name: Data Immutability
+    description: |
+      Response objects and data structures are immutable after creation,
+      preventing accidental mutation and enabling safe sharing.
+    guardrails:
+      - Response objects (completion-response, embedding-response) are immutable
+      - Tool definitions immutable after creation
+      - No setf methods on response accessors
+      - New data created via constructor functions, not mutation
+      - Thread-safe by default due to immutability
+
+  - id: SAFETY
+    name: Safety and Validation
+    description: |
+      Validate inputs, provide safety levels for tools, support approval workflows,
+      and fail early with clear errors.
+    guardrails:
+      - Tool definitions include safety-level metadata (:safe, :moderate, :dangerous)
+      - Parameter validation before tool execution
+      - Approval workflows for dangerous operations
+      - Type checking on public API boundaries
+      - Context window and token limit validation
+      - Clear distinction between user errors and system errors
+
+  - id: EXTENSIBILITY
+    name: Extensibility Through Protocols
+    description: |
+      Users can add new providers, define custom tools, and extend behavior through
+      well-defined generic function protocols.
+    guardrails:
+      - Provider protocol documented and stable
+      - New providers added without modifying core code
+      - Tool system supports custom validators, hooks, and handlers
+      - Hooks for observability (on-start, on-complete, on-error)
+      - Generic functions prefer methods over conditionals on types
+
+  - id: MINIMAL_DEPENDENCIES
+    name: Minimal External Dependencies
+    description: |
+      Rely on standard Common Lisp and a small set of well-maintained libraries.
+      Avoid dependency bloat.
+    guardrails:
+      - Core functionality works with minimal dependencies
+      - Optional features (specific providers, advanced tools) can pull in extras
+      - Dependencies must be actively maintained and portable
+      - Prefer standard library when possible
+      - Document dependency rationale
+
+  - id: TESTABILITY
+    name: Comprehensive Testing
+    description: |
+      All features have unit tests, property tests, and integration tests.
+      Tests serve as documentation and prevent regressions.
+    guardrails:
+      - Every exported function has test coverage
+      - Property tests for complex logic (token counting, validation)
+      - Mock providers for testing without API calls
+      - Integration tests with real providers (gated by environment variables)
+      - Tests document expected behavior and edge cases
+
+  - id: BACKWARD_COMPATIBILITY
+    name: Backward Compatibility
+    description: |
+      Once API is stabilized (version 1.0), breaking changes require major version
+      bump. Deprecate gracefully with warnings.
+    guardrails:
+      - Semantic versioning (MAJOR.MINOR.PATCH)
+      - Breaking changes only in major versions
+      - Deprecation warnings at least one minor version before removal
+      - Changelog documents all breaking changes
+      - Migration guides for major version upgrades

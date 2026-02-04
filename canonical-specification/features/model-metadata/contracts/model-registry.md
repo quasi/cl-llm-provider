@@ -4,9 +4,6 @@ name: model-registry
 version: 0.1.0
 status: draft
 feature: model-metadata
-depends_on:
-  - features/model-metadata/contracts/model-metadata
-  - core/foundation/vocabulary#registry
 ---
 
 # Model Registry Contract
@@ -303,6 +300,15 @@ Register metadata for specific versions to preserve accuracy:
 3. **Price accuracy**: Verify pricing against provider documentation
 4. **Update frequency**: Review registries monthly for model updates
 5. **Deprecation handling**: Keep metadata for deprecated models for backward compatibility
+
+## Error Conditions
+
+| Error | Condition | Recovery |
+|-------|-----------|----------|
+| `invalid-registry` | Registry argument is not a hash-table | Pass valid registry |
+| `invalid-metadata` | Metadata plist missing required fields | Provide complete metadata with all required keys |
+| `invalid-model-name` | Model name is not a string or is empty | Use valid string model identifier |
+| `duplicate-registration` | Attempting to re-register model without explicit replacement | This is allowed - registration overwrites existing |
 
 ## Related Contracts
 

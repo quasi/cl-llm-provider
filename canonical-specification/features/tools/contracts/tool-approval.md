@@ -4,10 +4,6 @@ name: tool-approval
 version: 0.1.0
 status: draft
 feature: tools
-depends_on:
-  - features/tools/contracts/tool-definition
-  - features/tools/contracts/tool-call
-  - core/foundation/vocabulary#approval
 ---
 
 # Tool Approval Contract

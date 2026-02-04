@@ -4,8 +4,6 @@ name: stream-chunk
 version: 0.1.0
 status: draft
 feature: streaming
-depends_on:
-  - core/foundation/vocabulary#chunk
 ---
 
 # Stream Chunk Contract

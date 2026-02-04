@@ -4,10 +4,6 @@ name: tool-validation
 version: 0.1.0
 status: draft
 feature: tools
-depends_on:
-  - features/tools/contracts/tool-definition
-  - features/tools/contracts/tool-call
-  - core/foundation/vocabulary#validation
 ---
 
 # Tool Validation Contract

@@ -4,10 +4,6 @@ name: streaming-protocol
 version: 0.1.0
 status: draft
 feature: streaming
-depends_on:
-  - features/providers/contracts/provider-protocol
-  - features/streaming/contracts/stream-chunk
-  - core/foundation/vocabulary#sse
 ---
 
 # Streaming Protocol Contract

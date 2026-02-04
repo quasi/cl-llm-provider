@@ -4,9 +4,6 @@ name: tool-definition
 version: 0.2.0
 status: draft
 feature: tools
-depends_on:
-  - core/foundation/vocabulary#tool
-  - core/foundation/vocabulary#parameter-schema
 ---
 
 # Tool Definition Contract

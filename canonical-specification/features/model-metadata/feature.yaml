@@ -1,7 +1,7 @@
 feature:
   name: model-metadata
   version: 0.1.0
-  status: draft
+  status: implemented
   description: |
     Model registry, capability introspection, token counting, and cost estimation.
     Maintains metadata for OpenAI and Anthropic models including context windows,

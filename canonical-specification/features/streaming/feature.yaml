@@ -1,7 +1,7 @@
 feature:
   name: streaming
   version: 0.1.0
-  status: draft
+  status: implemented
   description: |
     Streaming completion responses with server-sent events (SSE), chunk-by-chunk
     reading, and state management. Supports accumulation, finish reasons, and

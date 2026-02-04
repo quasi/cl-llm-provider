@@ -1,7 +1,7 @@
 feature:
   name: tools
   version: 0.2.0
-  status: draft
+  status: implemented
   description: |
     Tool definition, validation, approval workflows, and execution system.
     Supports safety levels, parameter validation, lifecycle hooks, and

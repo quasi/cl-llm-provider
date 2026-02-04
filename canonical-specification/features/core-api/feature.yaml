@@ -1,7 +1,7 @@
 feature:
   name: core-api
   version: 0.1.0
-  status: draft
+  status: implemented
   description: |
     Main user-facing API providing complete() and embedding() functions with
     provider abstraction, configuration management, and observability hooks.

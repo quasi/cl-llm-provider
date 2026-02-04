@@ -63,11 +63,20 @@
   :depends-on ("cl-llm-provider"
                "fiveam"
                "cl-test-hardening/harness"
-               "cl-test-hardening/fixture")
+               "cl-test-hardening/fixture"
+               "cl-test-hardening/property"
+               "cl-test-hardening/generators"
+               "cl-test-hardening/contract"
+               "cl-test-hardening/mutation"
+               "cl-test-hardening/operators")
   :components ((:module "tests"
                 :components
                 ((:file "test-harness")
                  (:file "test-fixtures" :depends-on ("test-harness"))
+                 (:file "generators" :depends-on ("test-harness"))
+                 (:file "test-properties" :depends-on ("test-harness" "generators"))
+                 (:file "test-contracts" :depends-on ("test-harness"))
+                 (:file "test-mutations" :depends-on ("test-harness"))
                  (:file "test-gemini-provider" :depends-on ("test-harness"))
                  (:file "test-integration-full-flow" :depends-on ("test-harness"))
                  (:file "test-observability" :depends-on ("test-harness"))

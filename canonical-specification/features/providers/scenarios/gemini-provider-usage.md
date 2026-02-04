@@ -4,6 +4,8 @@ name: gemini-provider-usage
 version: 1.0.0
 status: stable
 feature: providers
+covers:
+  - gemini-api
 test_evidence: tests/test-gemini-provider.lisp (44 assertions, 100% pass)
 implemented: 2026-01-16
 ---

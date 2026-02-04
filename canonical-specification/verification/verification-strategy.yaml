@@ -1,4 +1,4 @@
-strategy:
+verification:
   name: cl-llm-provider verification strategy
   version: 0.1.0
   description: |

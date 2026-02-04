@@ -4,6 +4,8 @@ name: multi-turn-conversation
 version: 0.1.0
 status: draft
 feature: core-api
+covers:
+  - complete
 test_evidence: tests/test-integration-full-flow.lisp:76-80
 ---
 

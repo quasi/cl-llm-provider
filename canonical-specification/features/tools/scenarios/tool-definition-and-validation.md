@@ -4,6 +4,9 @@ name: tool-definition-and-validation
 version: 0.1.0
 status: draft
 feature: tools
+covers:
+  - tool-definition
+  - tool-validation
 test_evidence: tests/test-tools-support.lisp:34-62, tests/test-tools-enhanced.lisp:73-126
 ---
 

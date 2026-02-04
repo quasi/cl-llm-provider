@@ -3,6 +3,9 @@ type: scenario
 name: cost-estimation
 version: 0.1.0
 feature: model-metadata
+covers:
+  - cost-estimation
+  - token-counting
 tags:
   - happy-path
   - budget-planning

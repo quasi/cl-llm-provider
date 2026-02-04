@@ -3,6 +3,9 @@ type: scenario
 name: basic-streaming
 version: 0.1.0
 feature: streaming
+covers:
+  - completion-stream
+  - stream-chunk
 tags:
   - happy-path
   - core-functionality

@@ -3,6 +3,9 @@ type: scenario
 name: streaming-with-callback
 version: 0.1.0
 feature: streaming
+covers:
+  - completion-stream
+  - stream-chunk
 tags:
   - callback
   - convenience

@@ -61,22 +61,26 @@
   :author "quasi / quasiLabs"
   :license "MIT"
   :depends-on ("cl-llm-provider"
-               "fiveam")
+               "fiveam"
+               "cl-test-hardening/harness"
+               "cl-test-hardening/fixture")
   :components ((:module "tests"
                 :components
-                ((:file "test-gemini-provider")
-                 (:file "test-integration-full-flow")
-                 (:file "test-observability")
-                 (:file "test-provider-introspection")
-                 (:file "test-provider-protocols")
-                 (:file "test-request-response-handling")
-                 (:file "test-streaming")
-                 (:file "test-token-metadata-comprehensive")
-                 (:file "test-token-metadata-functional")
-                 (:file "test-tokenizer")
-                 (:file "test-tools-enhanced")
-                 (:file "test-tools-integration")
-                 (:file "test-tools-support"))))
+                ((:file "test-harness")
+                 (:file "test-fixtures" :depends-on ("test-harness"))
+                 (:file "test-gemini-provider" :depends-on ("test-harness"))
+                 (:file "test-integration-full-flow" :depends-on ("test-harness"))
+                 (:file "test-observability" :depends-on ("test-harness"))
+                 (:file "test-provider-introspection" :depends-on ("test-harness"))
+                 (:file "test-provider-protocols" :depends-on ("test-harness"))
+                 (:file "test-request-response-handling" :depends-on ("test-harness"))
+                 (:file "test-streaming" :depends-on ("test-harness"))
+                 (:file "test-token-metadata-comprehensive" :depends-on ("test-harness"))
+                 (:file "test-token-metadata-functional" :depends-on ("test-harness"))
+                 (:file "test-tokenizer" :depends-on ("test-harness"))
+                 (:file "test-tools-enhanced" :depends-on ("test-harness"))
+                 (:file "test-tools-integration" :depends-on ("test-harness"))
+                 (:file "test-tools-support" :depends-on ("test-harness")))))
   :perform (test-op (o c)
              (symbol-call :fiveam :run!
                           (find-symbol* :cl-llm-provider-suite :cl-llm-provider/test))))

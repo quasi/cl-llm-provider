@@ -188,29 +188,29 @@
     (let ((message (list :role "assistant")))
       (if tool-calls
           (setf (getf message :tool-calls) tool-calls)
-          (setf (getf message :content) text-content)))
+          (setf (getf message :content) text-content))
 
-    (make-instance 'completion-response
-                   :id (gethash "id" raw-response)
-                   :model (gethash "model" raw-response)
-                   :content text-content
-                   :message message
-                   :tool-calls tool-calls
-                   :finish-reason (intern (string-upcase finish-reason) :keyword)
-                   :usage (list :prompt-tokens (gethash "input_tokens" usage)
-                                :completion-tokens (gethash "output_tokens" usage)
-                                :total-tokens (+ (gethash "input_tokens" usage)
-                                                (gethash "output_tokens" usage)))
-                   :raw raw-response
-                   :performance performance
-                   :metadata (let ((metadata nil))
-                              ;; Provider introspection
-                              (setf (getf metadata :provider-type) (provider-type provider))
-                              (setf (getf metadata :provider-name) (provider-name provider))
-                              ;; Extract stop sequence if present
-                              (when-let ((stop-seq (gethash "stop_sequence" raw-response)))
-                                (setf (getf metadata :stop-sequence) stop-seq))
-                              metadata))))
+      (make-instance 'completion-response
+                     :id (gethash "id" raw-response)
+                     :model (gethash "model" raw-response)
+                     :content text-content
+                     :message message
+                     :tool-calls tool-calls
+                     :finish-reason (intern (string-upcase finish-reason) :keyword)
+                     :usage (list :prompt-tokens (gethash "input_tokens" usage)
+                                  :completion-tokens (gethash "output_tokens" usage)
+                                  :total-tokens (+ (gethash "input_tokens" usage)
+                                                  (gethash "output_tokens" usage)))
+                     :raw raw-response
+                     :performance performance
+                     :metadata (let ((metadata nil))
+                                ;; Provider introspection
+                                (setf (getf metadata :provider-type) (provider-type provider))
+                                (setf (getf metadata :provider-name) (provider-name provider))
+                                ;; Extract stop sequence if present
+                                (when-let ((stop-seq (gethash "stop_sequence" raw-response)))
+                                  (setf (getf metadata :stop-sequence) stop-seq))
+                                metadata)))))
 
 (defmethod parse-tool-calls ((provider anthropic-provider) raw-response)
   "Parse Anthropic-style tool uses from content blocks."

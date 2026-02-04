@@ -1,28 +1,11 @@
 ;;; ABOUTME: Tests for enhanced tool functionality (validators, registry, approval, hooks, execution)
-(require :asdf)
-(ql:quickload '(:fiveam :alexandria :serapeum :cl-ppcre :yason) :silent t)
-
-;;; Load core library files
-(load "src/package.lisp")
-(load "src/conditions.lisp")
-(load "src/types.lisp")
-(load "src/tools.lisp")
-
-;;; Load enhanced tools module
-(load "src/tools/package.lisp")
-(load "src/tools/categories.lisp")
-(load "src/tools/validators.lisp")
-(load "src/tools/registry.lisp")
-(load "src/tools/approval.lisp")
-(load "src/tools/hooks.lisp")
-(load "src/tools/execution.lisp")
+(th.harness:setup :cl-llm-provider)
 
 (in-package :cl-llm-provider.tools)
 
-;;;; Test Suite Definition
-
 (fiveam:def-suite tools-enhanced-suite
-  :description "Tests for enhanced tools functionality")
+  :description "Tests for enhanced tools functionality"
+  :in cl-llm-provider/test::cl-llm-provider-suite)
 
 (fiveam:in-suite tools-enhanced-suite)
 
@@ -318,7 +301,3 @@
     (fiveam:is (member :start hook-calls))
     (fiveam:is (member :complete hook-calls))))
 
-;;;; Run Tests
-
-(format t "~%=== Running Enhanced Tools Test Suite ===~%~%")
-(fiveam:run! 'tools-enhanced-suite)

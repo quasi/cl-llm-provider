@@ -1,33 +1,8 @@
-(require :asdf)
-(ql:quickload :fiveam :silent t)
-(ql:quickload :alexandria :silent t)
-(ql:quickload :serapeum :silent t)
-(ql:quickload :dexador :silent t)
-(ql:quickload :yason :silent t)
-(ql:quickload :bordeaux-threads :silent t)
-(ql:quickload :cl-ppcre :silent t)
-(ql:quickload :uiop :silent t)
+(th.harness:setup :cl-llm-provider)
 
-;; Load the library
-(load "src/package.lisp")
-(load "src/conditions.lisp")
-(load "src/types.lisp")
-(load "src/config.lisp")
-(load "src/protocol.lisp")
-(load "src/model-registry.lisp")
-(load "src/tools.lisp")
-(load "src/providers/anthropic.lisp")
-(load "src/providers/openai.lisp")
-(load "src/providers/ollama.lisp")
-(load "src/providers/openrouter.lisp")
-(load "src/providers/openai-compatible.lisp")
-(load "src/api.lisp")
-
-(in-package :cl-llm-provider)
-
-;;; Define test suite
 (fiveam:def-suite provider-introspection-suite
-  :description "Test suite for provider introspection and metadata APIs")
+  :description "Test suite for provider introspection and metadata APIs"
+  :in cl-llm-provider/test::cl-llm-provider-suite)
 
 (fiveam:in-suite provider-introspection-suite)
 
@@ -328,7 +303,3 @@
   "provider-config-summary generic function should exist"
   (fiveam:is (fboundp 'provider-config-summary)))
 
-;;;; Run Tests
-
-(format t "~%~%=== Running Provider Introspection Test Suite ===~%~%")
-(fiveam:run! 'provider-introspection-suite)

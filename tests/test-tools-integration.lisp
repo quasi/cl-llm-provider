@@ -1,31 +1,8 @@
-(require :asdf)
-(ql:quickload :fiveam :silent t)
-(ql:quickload :alexandria :silent t)
-(ql:quickload :serapeum :silent t)
-(ql:quickload :dexador :silent t)
-(ql:quickload :yason :silent t)
-(ql:quickload :bordeaux-threads :silent t)
-(ql:quickload :cl-ppcre :silent t)
-(ql:quickload :uiop :silent t)
+(th.harness:setup :cl-llm-provider)
 
-;; Load the library
-(load "src/package.lisp")
-(load "src/conditions.lisp")
-(load "src/types.lisp")
-(load "src/protocol.lisp")
-(load "src/api.lisp")
-(load "src/tools.lisp")
-(load "src/config.lisp")
-(load "src/providers/anthropic.lisp")
-(load "src/providers/openai.lisp")
-(load "src/providers/ollama.lisp")
-(load "src/providers/openrouter.lisp")
-
-(in-package :cl-llm-provider)
-
-;;; Define test suite
 (fiveam:def-suite tools-integration-suite
-  :description "Integration tests for tool support across providers")
+  :description "Integration tests for tool support across providers"
+  :in cl-llm-provider/test::cl-llm-provider-suite)
 
 (fiveam:in-suite tools-integration-suite)
 
@@ -409,7 +386,3 @@
           (fiveam:is (string= (getf (tool-call-arguments tool-call) :expr) "2+2"))
           (fiveam:is (string= (getf result :content) "4")))))))
 
-;;;; Run Tests
-
-(format t "~%~%=== Running Tools Integration Test Suite ===~%~%")
-(fiveam:run! 'tools-integration-suite)

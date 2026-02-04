@@ -1,30 +1,8 @@
-(require :asdf)
-(ql:quickload :fiveam :silent t)
-(ql:quickload :alexandria :silent t)
-(ql:quickload :serapeum :silent t)
-(ql:quickload :dexador :silent t)
-(ql:quickload :yason :silent t)
-(ql:quickload :bordeaux-threads :silent t)
-(ql:quickload :cl-ppcre :silent t)
-(ql:quickload :uiop :silent t)
+(th.harness:setup :cl-llm-provider)
 
-;; Load the library
-(load "src/package.lisp")
-(load "src/conditions.lisp")
-(load "src/types.lisp")
-(load "src/protocol.lisp")
-(load "src/model-registry.lisp")
-(load "src/providers/anthropic.lisp")
-(load "src/providers/openai.lisp")
-(load "src/providers/ollama.lisp")
-(load "src/providers/openrouter.lisp")
-(load "src/tokenizer.lisp")
-
-(in-package :cl-llm-provider)
-
-;;; Define test suite
 (fiveam:def-suite tokenizer-suite
-  :description "Token counting tests")
+  :description "Token counting tests"
+  :in cl-llm-provider/test::cl-llm-provider-suite)
 
 (fiveam:in-suite tokenizer-suite)
 
@@ -93,6 +71,3 @@
     (fiveam:is (stringp formatted))
     (fiveam:is (search "N/A" formatted))))
 
-;;; Run tests
-(format t "~%~%Running tokenizer tests...~%")
-(fiveam:run! 'tokenizer-suite)

@@ -76,7 +76,8 @@
                  (:file "test-request-response-handling" :depends-on ("test-harness"))
                  (:file "test-streaming" :depends-on ("test-harness"))
                  (:file "test-token-metadata-comprehensive" :depends-on ("test-harness"))
-                 (:file "test-token-metadata-functional" :depends-on ("test-harness"))
+                 ;; test-token-metadata-functional is a standalone script (not FiveAM)
+                 ;; Run it directly: sbcl --load tests/test-token-metadata-functional.lisp
                  (:file "test-tokenizer" :depends-on ("test-harness"))
                  (:file "test-tools-enhanced" :depends-on ("test-harness"))
                  (:file "test-tools-integration" :depends-on ("test-harness"))

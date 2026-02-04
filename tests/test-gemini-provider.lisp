@@ -1,35 +1,8 @@
-(require :asdf)
-(ql:quickload :fiveam :silent t)
-(ql:quickload :alexandria :silent t)
-(ql:quickload :serapeum :silent t)
-(ql:quickload :dexador :silent t)
-(ql:quickload :yason :silent t)
-(ql:quickload :bordeaux-threads :silent t)
-(ql:quickload :cl-ppcre :silent t)
-(ql:quickload :uiop :silent t)
-
-;; Load the library
-(load "src/package.lisp")
-(load "src/conditions.lisp")
-(load "src/types.lisp")
-(load "src/config.lisp")
-(load "src/protocol.lisp")
-(load "src/model-registry.lisp")
-(load "src/tools.lisp")
-(load "src/providers/anthropic.lisp")
-(load "src/providers/openai.lisp")
-(load "src/providers/ollama.lisp")
-(load "src/providers/openrouter.lisp")
-(load "src/providers/openai-compatible.lisp")
-(load "src/providers/gemini.lisp")
-(load "src/api.lisp")
-
-(in-package :cl-llm-provider)
-
-;;;; Gemini Provider Unit Tests
+(th.harness:setup :cl-llm-provider)
 
 (fiveam:def-suite gemini-provider-tests
-  :description "Tests for Google Gemini provider")
+  :description "Tests for Google Gemini provider"
+  :in cl-llm-provider/test::cl-llm-provider-suite)
 
 (fiveam:in-suite gemini-provider-tests)
 
@@ -210,5 +183,3 @@
     (fiveam:is (= 5 (getf (response-usage response) :prompt-tokens)))
     (fiveam:is (eq :gemini (getf (response-metadata response) :provider-type)))))
 
-;;; Run tests
-(fiveam:run! 'gemini-provider-tests)

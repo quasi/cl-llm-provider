@@ -1,33 +1,8 @@
-(require :asdf)
-(ql:quickload :fiveam :silent t)
-(ql:quickload :alexandria :silent t)
-(ql:quickload :serapeum :silent t)
-(ql:quickload :dexador :silent t)
-(ql:quickload :yason :silent t)
-(ql:quickload :bordeaux-threads :silent t)
-(ql:quickload :cl-ppcre :silent t)
-(ql:quickload :uiop :silent t)
+(th.harness:setup :cl-llm-provider)
 
-;; Load the library
-(load "src/package.lisp")
-(load "src/conditions.lisp")
-(load "src/types.lisp")
-(load "src/observability.lisp")
-(load "src/protocol.lisp")
-(load "src/tools.lisp")
-(load "src/config.lisp")
-(load "src/model-registry.lisp")
-(load "src/providers/anthropic.lisp")
-(load "src/providers/openai.lisp")
-(load "src/providers/ollama.lisp")
-(load "src/providers/openrouter.lisp")
-(load "src/api.lisp")
-
-(in-package :cl-llm-provider)
-
-;;; Define test suite
 (fiveam:def-suite observability-suite
-  :description "Observability hooks tests")
+  :description "Observability hooks tests"
+  :in cl-llm-provider/test::cl-llm-provider-suite)
 
 (fiveam:in-suite observability-suite)
 
@@ -201,6 +176,3 @@
     (let ((output (get-output-stream-string log-output)))
       (fiveam:is (search "Debug content" output) "Debug level should include message content"))))
 
-;;; Run tests
-(format t "~%~%Running observability tests...~%")
-(fiveam:run! 'observability-suite)

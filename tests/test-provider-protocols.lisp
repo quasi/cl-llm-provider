@@ -1,31 +1,8 @@
-(require :asdf)
-(ql:quickload :fiveam :silent t)
-(ql:quickload :alexandria :silent t)
-(ql:quickload :serapeum :silent t)
-(ql:quickload :dexador :silent t)
-(ql:quickload :yason :silent t)
-(ql:quickload :bordeaux-threads :silent t)
-(ql:quickload :cl-ppcre :silent t)
-(ql:quickload :uiop :silent t)
+(th.harness:setup :cl-llm-provider)
 
-;; Load the library
-(load "src/package.lisp")
-(load "src/conditions.lisp")
-(load "src/types.lisp")
-(load "src/protocol.lisp")
-(load "src/api.lisp")
-(load "src/tools.lisp")
-(load "src/config.lisp")
-(load "src/providers/anthropic.lisp")
-(load "src/providers/openai.lisp")
-(load "src/providers/ollama.lisp")
-(load "src/providers/openrouter.lisp")
-
-(in-package :cl-llm-provider)
-
-;;; Define test suite
 (fiveam:def-suite provider-protocol-suite
-  :description "Comprehensive test suite for provider protocols and request/response handling")
+  :description "Comprehensive test suite for provider protocols and request/response handling"
+  :in cl-llm-provider/test::cl-llm-provider-suite)
 
 (fiveam:in-suite provider-protocol-suite)
 
@@ -420,7 +397,3 @@
       (fiveam:is (getf msg :role))
       (fiveam:is (string= (getf msg :role) "assistant")))))
 
-;;;; Run Tests
-
-(format t "~%~%=== Running Provider Protocol Test Suite ===~%~%")
-(fiveam:run! 'provider-protocol-suite)

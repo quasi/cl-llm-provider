@@ -72,9 +72,10 @@
         (setf (gethash "stream" body) yason:false)
 
         ;; Enable thinking mode for reasoning models (qwen, deepseek-r1, etc.)
-        ;; This can be overridden via provider options
+        ;; Default off since most models don't support it;
+        ;; enable via :options (list :think t) for reasoning models
         (setf (gethash "think" body)
-              (getf (provider-options provider) :think yason:true))
+              (getf (provider-options provider) :think yason:false))
 
         ;; Encode to JSON
         (setf encoded-body

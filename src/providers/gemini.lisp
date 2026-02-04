@@ -3,7 +3,7 @@
 ;;;; Google Gemini Provider Implementation
 
 (defmethod provider-default-base-url ((provider gemini-provider))
-  "https://generativelanguage.googleapis.com/v1beta/openai/")
+  "https://generativelanguage.googleapis.com/v1beta/openai")
 
 (defmethod provider-api-key-env-var ((provider gemini-provider))
   "GEMINI_API_KEY")

@@ -57,7 +57,7 @@
 (fiveam:test gemini-default-base-url
   "Gemini provider has correct default base URL"
   (let ((provider (make-provider :gemini :api-key "test-key")))
-    (fiveam:is (string= "https://generativelanguage.googleapis.com/v1beta/openai/"
+    (fiveam:is (string= "https://generativelanguage.googleapis.com/v1beta/openai"
                  (provider-base-url provider)))))
 
 (fiveam:test gemini-api-key-env-var

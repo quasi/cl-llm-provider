@@ -43,6 +43,29 @@ Estimate token count from text length.
 ;; → 0
 ```
 
+### JSON Schema: Token Estimation Parameters
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "text": {"type": ["string", "null"]},
+    "chars_per_token": {"type": "number", "minimum": 1, "default": 4}
+  }
+}
+```
+
+### JSON Schema: Token Count Response
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "integer",
+  "minimum": 0
+}
+```
+
 ### `count-message-tokens`
 
 Count tokens in a single message.

@@ -41,6 +41,43 @@ The `complete` function is the primary interface for sending completion requests
 | `on-response` | `function` | No | `nil` | Callback after response: `(lambda (response timing) ...)` |
 | `on-error` | `function` | No | `nil` | Callback on error: `(lambda (error) ...)` |
 
+### JSON Schema: Message Format
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["role", "content"],
+  "properties": {
+    "role": {
+      "type": "string",
+      "enum": ["user", "assistant", "system"]
+    },
+    "content": {
+      "oneOf": [
+        {"type": "string"},
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {"type": "string"},
+              "text": {"type": "string"},
+              "image_url": {
+                "type": "object",
+                "properties": {
+                  "url": {"type": "string"}
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
 ## Return Value
 
 Returns: `completion-response` object
@@ -59,6 +96,64 @@ Returns: `completion-response` object
 | `raw` | `hash-table` | `response-raw` | Original provider response |
 | `performance` | `plist` or `nil` | `response-performance` | Timing data when profiling enabled |
 | `metadata` | `plist` or `nil` | `response-metadata` | Provider-specific metadata |
+
+### JSON Schema: Completion Response
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["id", "model", "message", "finish_reason", "usage"],
+  "properties": {
+    "id": {"type": "string"},
+    "model": {"type": "string"},
+    "content": {"type": ["string", "null"]},
+    "message": {
+      "type": "object",
+      "required": ["role", "content"],
+      "properties": {
+        "role": {"type": "string"},
+        "content": {"type": ["string", "array", "null"]}
+      }
+    },
+    "tool_calls": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "arguments"],
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "arguments": {"type": "object"}
+        }
+      }
+    },
+    "finish_reason": {
+      "type": "string",
+      "enum": ["stop", "length", "tool_calls"]
+    },
+    "usage": {
+      "type": "object",
+      "required": ["prompt_tokens", "completion_tokens", "total_tokens"],
+      "properties": {
+        "prompt_tokens": {"type": "integer", "minimum": 0},
+        "completion_tokens": {"type": "integer", "minimum": 0},
+        "total_tokens": {"type": "integer", "minimum": 0}
+      }
+    },
+    "raw": {"type": "object"},
+    "performance": {
+      "type": ["object", "null"],
+      "properties": {
+        "encode_time": {"type": "number"},
+        "api_time": {"type": "number"},
+        "decode_time": {"type": "number"}
+      }
+    },
+    "metadata": {"type": ["object", "null"]}
+  }
+}
+```
 
 ## Behavior
 

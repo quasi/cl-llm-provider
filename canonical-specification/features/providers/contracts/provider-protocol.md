@@ -57,6 +57,16 @@ The protocol separates concerns into three categories:
 **Invariants**:
 - RULE-012: No side effects beyond HTTP requests, profiling, and condition signaling
 
+#### JSON Schema: Raw Response Structure
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "Provider-specific raw response (structure varies by provider)"
+}
+```
+
 ---
 
 ### parse-completion-response
@@ -234,6 +244,22 @@ The protocol separates concerns into three categories:
 **Invariants**:
 - Missing keys equivalent to NIL (not supported)
 - Values are T or NIL
+
+#### JSON Schema: Provider Capabilities
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "tools": {"type": "boolean"},
+    "embeddings": {"type": "boolean"},
+    "streaming": {"type": "boolean"},
+    "vision": {"type": "boolean"},
+    "function_calling": {"type": "boolean"}
+  }
+}
+```
 
 ---
 

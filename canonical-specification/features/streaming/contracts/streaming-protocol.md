@@ -85,6 +85,37 @@ data: [DONE]
 - `[DONE]` signals completion
 - No event type field
 
+#### JSON Schema: OpenAI Stream Chunk
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "choices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "delta": {
+            "type": "object",
+            "properties": {
+              "content": {"type": "string"},
+              "tool_calls": {"type": "array"}
+            }
+          },
+          "index": {"type": "integer"},
+          "finish_reason": {
+            "type": ["string", "null"],
+            "enum": ["stop", "length", "tool_calls", null]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 ### Anthropic Format
 
 Typed events with state machine:
@@ -113,6 +144,31 @@ data: {"type":"message_stop"}
 - Event type determines how to parse data
 - Only `content_block_delta` produces stream chunks
 - Other events update metadata
+
+#### JSON Schema: Anthropic Content Block Delta
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["type", "index", "delta"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "content_block_delta"
+    },
+    "index": {"type": "integer"},
+    "delta": {
+      "type": "object",
+      "properties": {
+        "type": {"type": "string", "enum": ["text_delta", "input_json_delta"]},
+        "text": {"type": "string"},
+        "partial_json": {"type": "string"}
+      }
+    }
+  }
+}
+```
 
 ## Implementation Template
 

@@ -39,6 +39,33 @@ The hooks system provides a non-intrusive way to observe request/response lifecy
 - `hooks-on-error`
 - `hooks-on-stream-chunk`
 
+### JSON Schema: Hooks Structure
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "before_request": {
+      "type": "array",
+      "items": {"type": "string", "description": "Function reference"}
+    },
+    "after_response": {
+      "type": "array",
+      "items": {"type": "string", "description": "Function reference"}
+    },
+    "on_error": {
+      "type": "array",
+      "items": {"type": "string", "description": "Function reference"}
+    },
+    "on_stream_chunk": {
+      "type": "array",
+      "items": {"type": "string", "description": "Function reference"}
+    }
+  }
+}
+```
+
 ---
 
 ## Functions

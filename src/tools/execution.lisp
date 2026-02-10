@@ -88,7 +88,16 @@ Callers should treat context as read-only after execute-tool returns."))
 
     ;; Check handler exists
     (unless (tool-handler tool)
-      (error "Tool ~A has no handler function" (tool-name tool)))
+      (restart-case
+          (error 'tool-handler-missing-error
+                 :tool tool
+                 :message (format nil "Tool ~A has no handler function" (tool-name tool)))
+        (use-handler (fn)
+          :report "Supply a handler function"
+          :interactive (lambda ()
+                         (format t "Enter handler function: ")
+                         (list (eval (read))))
+          (setf (slot-value tool 'cl-llm-provider::handler) fn))))
 
     ;; Step 1: Safety check
     (when max-safety-level
@@ -137,38 +146,47 @@ Callers should treat context as read-only after execute-tool returns."))
     (setf (context-start-time context) (get-internal-real-time))
 
     ;; Step 5: Execute handler
-    ;; Note: We intentionally catch all errors here to ensure lifecycle hooks
-    ;; (:on-error) always fire. The error is re-signaled after hooks run.
-    (handler-case
-        (let ((result (funcall (tool-handler tool) arguments)))
-          ;; Record end time
-          (setf (context-end-time context) (get-internal-real-time))
-          (setf (context-result context) result)
+    ;; Use handler-bind to fire lifecycle hooks without destroying restart stack,
+    ;; then wrap with restart-case for agent recovery options.
+    (handler-bind
+        ((error (lambda (e)
+                  ;; Record error
+                  (setf (context-end-time context) (get-internal-real-time))
+                  (setf (context-error context) e)
+                  ;; Step 6b: Invoke :on-error hook
+                  (invoke-tool-hook :on-error tool call arguments e)
+                  (when registry
+                    (invoke-global-hooks registry :on-error call arguments e)))))
+      (restart-case
+          (let ((result (funcall (tool-handler tool) arguments)))
+            ;; Record end time
+            (setf (context-end-time context) (get-internal-real-time))
+            (setf (context-result context) result)
 
-          ;; Step 6a: Invoke :on-complete hook
-          (invoke-tool-hook :on-complete tool call arguments result)
-          (when registry
-            (invoke-global-hooks registry :on-complete call arguments result))
+            ;; Step 6a: Invoke :on-complete hook
+            (invoke-tool-hook :on-complete tool call arguments result)
+            (when registry
+              (invoke-global-hooks registry :on-complete call arguments result))
 
-          ;; Return result
-          result)
-
-      (error (e)
-        ;; Record error
-        (setf (context-end-time context) (get-internal-real-time))
-        (setf (context-error context) e)
-
-        ;; Step 6b: Invoke :on-error hook
-        (invoke-tool-hook :on-error tool call arguments e)
-        (when registry
-          (invoke-global-hooks registry :on-error call arguments e))
-
-        ;; Re-signal the error
-        (error e)))))
+            ;; Return result
+            result)
+        (use-error-result ()
+          :report "Return error description as tool result"
+          (let ((e (context-error context)))
+            (format nil "Error executing ~A: ~A" (tool-name tool) e)))
+        (retry-execution ()
+          :report "Retry executing the tool handler"
+          (funcall (tool-handler tool) arguments))
+        (use-value (v)
+          :report "Supply a result value"
+          :interactive (lambda ()
+                         (format t "Enter result value: ")
+                         (list (eval (read))))
+          v)))))
 
 ;;;; Execute Multiple Tool Calls
 
-(defun execute-tool-calls (response &key registry skip-approval skip-validation
+(defun/i execute-tool-calls (response &key registry skip-approval skip-validation
                                          approval-callback max-safety-level
                                          on-missing-tool)
   "Execute all tool calls from a completion response.
@@ -186,6 +204,8 @@ Callers should treat context as read-only after execute-tool returns."))
 
    Returns list of (tool-call . result) pairs.
    For error cases, result may be a condition object if :skip is used."
+  (:feature tool-calling)
+  (:purpose "Batch-execute all tool calls from a completion response")
   (let ((calls (response-tool-calls response))
         (results nil))
     (dolist (call calls)
@@ -212,7 +232,25 @@ Callers should treat context as read-only after execute-tool returns."))
              (:skip
               (push (cons call nil) results))
              ((nil :error)
-              (error "Tool ~S not found in registry" tool-name))
+              (restart-case
+                  (error 'tool-not-found-error
+                         :tool-name tool-name
+                         :available-tools (when registry
+                                            (mapcar #'tool-name (list-tools registry)))
+                         :message (format nil "Tool ~S not found in registry" tool-name))
+                (skip-tool ()
+                  :report (lambda (s) (format s "Skip tool call ~A" tool-name))
+                  (push (cons call nil) results))
+                (use-handler (fn)
+                  :report "Supply a handler function for this tool call"
+                  :interactive (lambda ()
+                                 (format t "Enter handler function: ")
+                                 (list (eval (read))))
+                  (handler-case
+                      (let ((result (funcall fn (tool-call-arguments call))))
+                        (push (cons call result) results))
+                    (error (e)
+                      (push (cons call e) results))))))
              (otherwise
               (if (functionp on-missing-tool)
                   (handler-case
@@ -220,17 +258,27 @@ Callers should treat context as read-only after execute-tool returns."))
                         (push (cons call result) results))
                     (error (e)
                       (push (cons call e) results)))
-                  (error "Tool ~S not found in registry" tool-name))))))))
+                  (restart-case
+                      (error 'tool-not-found-error
+                             :tool-name tool-name
+                             :available-tools (when registry
+                                                (mapcar #'tool-name (list-tools registry)))
+                             :message (format nil "Tool ~S not found in registry" tool-name))
+                    (skip-tool ()
+                      :report (lambda (s) (format s "Skip tool call ~A" tool-name))
+                      (push (cons call nil) results))))))))))
     (nreverse results)))
 
 ;;;; Result Processing Helpers
 
-(defun execution-results-to-tool-messages (results)
+(defun/i execution-results-to-tool-messages (results)
   "Convert execution results to tool result messages for LLM continuation.
 
    RESULTS - list of (tool-call . result) pairs from execute-tool-calls
 
    Returns list of message plists suitable for appending to conversation."
+  (:feature tool-calling)
+  (:purpose "Convert execution results to tool-result messages for conversation continuation")
   (loop for (call . result) in results
         collect (make-tool-result
                  (tool-call-id call)
@@ -240,3 +288,15 @@ Callers should treat context as read-only after execute-tool returns."))
                    (null "null")
                    (t (format nil "~S" result)))
                  :is-error (typep result 'condition))))
+
+;;; Telos Intent Annotations
+
+(defintent tool-execution-context
+  :feature tool-calling
+  :purpose "Track mutable state through tool execution lifecycle"
+  :role "Context object recording approval, timing, result, and error for a single tool invocation")
+
+(defintent execute-tool
+  :feature tool-calling
+  :purpose "Full lifecycle tool execution: safety check, validation, approval, hooks, handler"
+  :role "Primary entry point for executing a tool with all safety and lifecycle guarantees")

@@ -25,13 +25,17 @@ Keys are model name strings, values are plists with same schema as *openai-model
   "Registry of Google Gemini model metadata.
 Keys are model name strings, values are plists with same schema as *openai-model-registry*.")
 
-(defun register-model-metadata (registry model-name metadata)
+(defun/i register-model-metadata (registry model-name metadata)
   "Register METADATA for MODEL-NAME in REGISTRY.
 METADATA should be a plist with keys like :context-window, :max-output-tokens, etc."
+  (:feature provider-protocol)
+  (:purpose "Store model capabilities and pricing for cost estimation and validation")
   (setf (gethash model-name registry) metadata))
 
-(defun get-model-metadata (registry model-name)
+(defun/i get-model-metadata (registry model-name)
   "Get metadata for MODEL-NAME from REGISTRY, or NIL if unknown."
+  (:feature provider-protocol)
+  (:purpose "Retrieve model capabilities and pricing metadata")
   (gethash model-name registry))
 
 ;;; ============================================================

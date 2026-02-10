@@ -3,6 +3,9 @@
 
 (defpackage :cl-llm-provider.tools
   (:use :cl :cl-llm-provider)
+  (:import-from :telos
+                #:defun/i
+                #:defintent)
   (:import-from :alexandria
                 :if-let
                 :when-let

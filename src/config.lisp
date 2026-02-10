@@ -38,7 +38,7 @@ Pass :temperature explicitly for per-request overrides.")
 
 ;;;; Configuration Loading (Opt-In Only)
 
-(defun load-configuration-from-file (&key (path +default-config-file-path+) verbose)
+(defun/i load-configuration-from-file (&key (path +default-config-file-path+) verbose)
   "Load configuration from a Lisp file (OPT-IN ONLY - never called automatically).
 
    PATH - Path to configuration file (default: +default-config-file-path+)
@@ -70,6 +70,8 @@ Pass :temperature explicitly for per-request overrides.")
      (load-configuration-from-file)                    ; Uses +default-config-file-path+
      (load-configuration-from-file :path #p\"~/my-config.lisp\")
      (load-configuration-from-file :verbose t)"
+  (:feature configuration)
+  (:purpose "Load API keys and defaults from user config file")
   (let* ((config-path path)
          (resolved-path (probe-file config-path)))
 
@@ -146,7 +148,7 @@ Pass :temperature explicitly for per-request overrides.")
         :default-temperature *default-temperature*))
 
 
-(defun configure-defaults (&key provider model max-tokens temperature)
+(defun/i configure-defaults (&key provider model max-tokens temperature)
   "Set global defaults for LLM operations.
 
 PROVIDER - Default provider (provider instance or keyword to create one automatically)
@@ -164,6 +166,8 @@ Example:
 
   (configure-defaults :provider :anthropic
                       :model \"claude-3-sonnet-20240229\")"
+  (:feature configuration)
+  (:purpose "Thread-safe mutation of global provider/model/temperature defaults")
   (bt:with-lock-held (*config-lock*)
     (when provider
       (setf *default-provider*
@@ -201,8 +205,10 @@ Example:
 
 ;;;; Internal Helpers
 
-(defun get-env-or-error (var-name &optional (error-message "Environment variable not set"))
+(defun/i get-env-or-error (var-name &optional (error-message "Environment variable not set"))
   "Get environment variable VAR-NAME or signal error."
+  (:feature configuration)
+  (:purpose "Retrieve env var with restart for interactive/programmatic value supply")
   (or (uiop:getenv var-name)
       (restart-case
           (error 'provider-configuration-error

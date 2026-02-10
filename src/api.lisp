@@ -4,7 +4,7 @@
 ;;;;
 ;;;; This file provides the main user-facing API functions.
 
-(defun make-provider (provider-type &key api-key base-url model options)
+(defun/i make-provider (provider-type &key api-key base-url model options)
   "Create a provider instance for API interactions.
 
 PROVIDER-TYPE - One of :anthropic, :gemini, :openai, :ollama, :openrouter, :openai-compatible
@@ -35,6 +35,8 @@ Example:
                  :api-key \"gsk_...\"
                  :base-url \"https://api.groq.com/openai/v1\"
                  :model \"mixtral-8x7b-32768\")"
+  (:feature completion-api)
+  (:purpose "Factory function to create configured provider instances")
   (let* ((provider-class (ecase provider-type
                            (:anthropic 'anthropic-provider)
                            (:gemini 'gemini-provider)
@@ -63,7 +65,7 @@ Example:
 
     provider))
 
-(defun complete (messages &key provider model max-tokens temperature
+(defun/i complete (messages &key provider model max-tokens temperature
                               system tools tool-choice stop
                               hooks on-request on-response on-error)
   "Send a completion request to an LLM provider.
@@ -115,6 +117,8 @@ Example:
                          (format t \"Sending request to ~A~%\" (getf info :provider)))
             :on-response (lambda (response timing)
                           (format t \"Got response in ~,2Fs~%\" timing)))"
+  (:feature completion-api)
+  (:purpose "Send completion request with provider resolution, hooks, and error handling")
   (let* ((prov (or provider *default-provider*))
          (mod (or model
                   (and prov (provider-default-model prov))
@@ -129,12 +133,28 @@ Example:
                             :has-tools (not (null tools)))))
 
     (unless prov
-      (error 'provider-configuration-error
-             :message "No provider specified and *default-provider* is nil"))
+      (setf prov
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No provider specified and *default-provider* is nil")
+              (use-provider (p)
+                :report "Supply a provider to use"
+                :interactive (lambda ()
+                               (format t "Enter provider form: ")
+                               (list (eval (read))))
+                p))))
 
     (unless mod
-      (error 'provider-configuration-error
-             :message "No model specified and no default model configured"))
+      (setf mod
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No model specified and no default model configured")
+              (use-model (m)
+                :report "Supply a model name"
+                :interactive (lambda ()
+                               (format t "Enter model name: ")
+                               (list (read-line)))
+                m))))
 
     ;; Validate tools if provided
     (when tools
@@ -146,55 +166,55 @@ Example:
     (when on-request
       (funcall on-request request-info))
 
-    (handler-case
-        ;; Send request and parse response (with performance tracking if enabled)
-        (let ((response
-                (if *performance-profiling*
-                    (let ((*performance-stats* (make-performance-stats)))
-                      (let* ((raw-response (send-completion-request prov messages
-                                                                     :model mod
-                                                                     :max-tokens max-tok
-                                                                     :temperature temp
-                                                                     :system system
-                                                                     :tools tools
-                                                                     :tool-choice tool-choice
-                                                                     :stop stop))
-                             (resp (with-performance-timing (:decode-time)
-                                     (parse-completion-response prov raw-response
-                                                               :performance nil))))
-                        ;; Update response with complete performance stats (including decode time)
-                        (setf (response-performance resp) (get-performance-stats))
-                        resp))
-                    ;; No profiling - standard path
-                    (let ((raw-response (send-completion-request prov messages
-                                                                  :model mod
-                                                                  :max-tokens max-tok
-                                                                  :temperature temp
-                                                                  :system system
-                                                                  :tools tools
-                                                                  :tool-choice tool-choice
-                                                                  :stop stop)))
-                      (parse-completion-response prov raw-response))))
-              (timing (/ (- (get-internal-real-time) start-time)
-                        internal-time-units-per-second)))
+    ;; Use handler-bind (not handler-case) to preserve restart stack from deeper calls.
+    ;; This allows agents using handler-bind + invoke-restart to recover from errors
+    ;; signaled by handle-http-error, provider methods, etc.
+    (handler-bind
+        ((error (lambda (e)
+                  (when all-hooks
+                    (invoke-hooks all-hooks :on-error prov mod e))
+                  (when on-error
+                    (funcall on-error e)))))
+      ;; Send request and parse response (with performance tracking if enabled)
+      (let ((response
+              (if *performance-profiling*
+                  (let ((*performance-stats* (make-performance-stats)))
+                    (let* ((raw-response (send-completion-request prov messages
+                                                                   :model mod
+                                                                   :max-tokens max-tok
+                                                                   :temperature temp
+                                                                   :system system
+                                                                   :tools tools
+                                                                   :tool-choice tool-choice
+                                                                   :stop stop))
+                           (resp (with-performance-timing (:decode-time)
+                                   (parse-completion-response prov raw-response
+                                                             :performance nil))))
+                      ;; Update response with complete performance stats (including decode time)
+                      (setf (response-performance resp) (get-performance-stats))
+                      resp))
+                  ;; No profiling - standard path
+                  (let ((raw-response (send-completion-request prov messages
+                                                                :model mod
+                                                                :max-tokens max-tok
+                                                                :temperature temp
+                                                                :system system
+                                                                :tools tools
+                                                                :tool-choice tool-choice
+                                                                :stop stop)))
+                    (parse-completion-response prov raw-response))))
+            (timing (/ (- (get-internal-real-time) start-time)
+                      internal-time-units-per-second)))
 
-          ;; Invoke after-response hooks
-          (when all-hooks
-            (invoke-hooks all-hooks :after-response prov mod response timing))
-          (when on-response
-            (funcall on-response response timing))
-
-          response)
-
-      (error (e)
-        ;; Invoke error hooks
+        ;; Invoke after-response hooks (only on success path)
         (when all-hooks
-          (invoke-hooks all-hooks :on-error prov mod e))
-        (when on-error
-          (funcall on-error e))
-        (error e)))))
+          (invoke-hooks all-hooks :after-response prov mod response timing))
+        (when on-response
+          (funcall on-response response timing))
 
-(defun embedding (input &key provider model dimensions)
+        response))))
+
+(defun/i embedding (input &key provider model dimensions)
   "Generate vector embeddings for text.
 
 INPUT - Text to embed (string or list of strings)
@@ -213,18 +233,36 @@ Example:
   ;; Batch embeddings
   (embedding '(\"First document\" \"Second document\" \"Third document\")
              :model \"text-embedding-3-small\")"
+  (:feature completion-api)
+  (:purpose "Generate vector embeddings with provider resolution and profiling")
   (let* ((prov (or provider *default-provider*))
          (mod (or model
                   (and prov (provider-default-model prov))
                   *default-model*)))
 
     (unless prov
-      (error 'provider-configuration-error
-             :message "No provider specified and *default-provider* is nil"))
+      (setf prov
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No provider specified and *default-provider* is nil")
+              (use-provider (p)
+                :report "Supply a provider to use"
+                :interactive (lambda ()
+                               (format t "Enter provider form: ")
+                               (list (eval (read))))
+                p))))
 
     (unless mod
-      (error 'provider-configuration-error
-             :message "No model specified and no default model configured"))
+      (setf mod
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No model specified and no default model configured")
+              (use-model (m)
+                :report "Supply a model name"
+                :interactive (lambda ()
+                               (format t "Enter model name: ")
+                               (list (read-line)))
+                m))))
 
     ;; Send request and parse response (with performance tracking if enabled)
     (if *performance-profiling*
@@ -244,7 +282,7 @@ Example:
                                                      :dimensions dimensions)))
           (parse-embedding-response prov raw-response)))))
 
-(defun complete-stream (messages &key provider model max-tokens temperature
+(defun/i complete-stream (messages &key provider model max-tokens temperature
                                       system tools tool-choice stop
                                       on-chunk on-complete on-error)
   "Send a streaming completion request to an LLM provider.
@@ -280,6 +318,8 @@ Example:
     (loop for chunk = (read-stream-chunk stream)
           while chunk
           do (format t \"~A\" (chunk-delta chunk))))"
+  (:feature streaming-api)
+  (:purpose "Send streaming completion with optional chunk/complete/error callbacks")
   (let* ((prov (or provider *default-provider*))
          (mod (or model
                   (and prov (provider-default-model prov))
@@ -288,12 +328,28 @@ Example:
          (temp (or temperature *default-temperature*)))
 
     (unless prov
-      (error 'provider-configuration-error
-             :message "No provider specified and *default-provider* is nil"))
+      (setf prov
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No provider specified and *default-provider* is nil")
+              (use-provider (p)
+                :report "Supply a provider to use"
+                :interactive (lambda ()
+                               (format t "Enter provider form: ")
+                               (list (eval (read))))
+                p))))
 
     (unless mod
-      (error 'provider-configuration-error
-             :message "No model specified and no default model configured"))
+      (setf mod
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No model specified and no default model configured")
+              (use-model (m)
+                :report "Supply a model name"
+                :interactive (lambda ()
+                               (format t "Enter model name: ")
+                               (list (read-line)))
+                m))))
 
     ;; Validate tools if provided
     (when tools
@@ -308,19 +364,20 @@ Example:
                                           :tool-choice tool-choice
                                           :stop stop)))
 
-      ;; If callbacks provided, start reading in current thread
+      ;; If callbacks provided, start reading in current thread.
+      ;; Use handler-bind (not handler-case) to preserve restart stack from
+      ;; read-stream-chunk errors (e.g. stream-interrupted-error restarts).
       (when (or on-chunk on-complete on-error)
-        (handler-case
-            (loop for chunk = (read-stream-chunk stream)
-                  while chunk
-                  do (when on-chunk (funcall on-chunk chunk))
-                  finally (when on-complete
-                            (funcall on-complete
-                                    (stream-accumulated-content stream)
-                                    (car (stream-chunks stream)))))
-          (error (e)
-            (if on-error
-                (funcall on-error e)
-                (error e)))))
+        (handler-bind
+            ((error (lambda (e)
+                      (when on-error
+                        (funcall on-error e)))))
+          (loop for chunk = (read-stream-chunk stream)
+                while chunk
+                do (when on-chunk (funcall on-chunk chunk))
+                finally (when on-complete
+                          (funcall on-complete
+                                   (stream-accumulated-content stream)
+                                   (car (stream-chunks stream)))))))
 
       stream)))

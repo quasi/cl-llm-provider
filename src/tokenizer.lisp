@@ -49,7 +49,7 @@ Returns estimated token count (integer)."
                         (let ((text (getf part :text)))
                           (if text (estimate-tokens-from-text text) 0)))))))))
 
-(defun count-tokens (messages &key model provider)
+(defun/i count-tokens (messages &key model provider)
   "Count tokens in MESSAGES for MODEL/PROVIDER.
 
 MESSAGES - List of message plists
@@ -65,6 +65,8 @@ Example:
   (count-tokens '((:role \"user\" :content \"What is Common Lisp?\"))
                 :model \"gpt-4\")
   => 8"
+  (:feature completion-api)
+  (:purpose "Estimate token count for cost estimation and context window planning")
   (declare (ignore model provider)) ; TODO: Use for accurate tokenizers
   (loop for message in messages
         sum (count-message-tokens message)))
@@ -82,7 +84,7 @@ Returns estimated token count (integer)."
          0)
      (count-tokens messages :model model :provider provider)))
 
-(defun estimate-cost (messages &key provider model system max-tokens)
+(defun/i estimate-cost (messages &key provider model system max-tokens)
   "Estimate cost for a completion request.
 
 MESSAGES - List of message plists
@@ -100,6 +102,8 @@ Example:
   (multiple-value-bind (in out total)
       (estimate-cost messages :provider *openai* :model \"gpt-4\" :max-tokens 500)
     (format t \"Estimated cost: $~,4F~%\" total))"
+  (:feature completion-api)
+  (:purpose "Pre-request cost estimation using model pricing metadata")
   (let* ((effective-model (or model
                              (when provider (provider-default-model provider))))
          (metadata (when (and provider effective-model)

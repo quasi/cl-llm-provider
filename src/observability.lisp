@@ -18,7 +18,7 @@ Supported hook types:
   (on-error nil :type list)
   (on-stream-chunk nil :type list))
 
-(defun add-hook (hooks hook-type function)
+(defun/i add-hook (hooks hook-type function)
   "Add FUNCTION to HOOKS for HOOK-TYPE.
 
 HOOKS - hooks structure from make-hooks
@@ -26,6 +26,8 @@ HOOK-TYPE - One of :before-request, :after-response, :on-error, :on-stream-chunk
 FUNCTION - Callback function
 
 Returns HOOKS (for chaining)."
+  (:feature observability)
+  (:purpose "Register callback for specific lifecycle event type")
   (ecase hook-type
     (:before-request
      (push function (hooks-before-request hooks)))
@@ -37,10 +39,12 @@ Returns HOOKS (for chaining)."
      (push function (hooks-on-stream-chunk hooks))))
   hooks)
 
-(defun remove-hook (hooks hook-type function)
+(defun/i remove-hook (hooks hook-type function)
   "Remove FUNCTION from HOOKS for HOOK-TYPE.
 
 Returns HOOKS (for chaining)."
+  (:feature observability)
+  (:purpose "Unregister a previously added hook callback")
   (ecase hook-type
     (:before-request
      (setf (hooks-before-request hooks)
@@ -56,10 +60,12 @@ Returns HOOKS (for chaining)."
            (remove function (hooks-on-stream-chunk hooks)))))
   hooks)
 
-(defun invoke-hooks (hooks hook-type &rest args)
+(defun/i invoke-hooks (hooks hook-type &rest args)
   "Invoke all hooks of HOOK-TYPE with ARGS.
 
 Errors in hooks are caught and logged, not propagated."
+  (:feature observability)
+  (:purpose "Fire all registered hooks for an event, swallowing hook errors")
   (let ((hook-list (ecase hook-type
                     (:before-request (hooks-before-request hooks))
                     (:after-response (hooks-after-response hooks))
@@ -85,7 +91,7 @@ Set with (setf *global-hooks* (make-hooks)) and add hooks.")
       (get-decoded-time)
     (format nil "~2,'0D:~2,'0D:~2,'0D" hour min sec)))
 
-(defun make-logging-hooks (&key (stream *standard-output*) (level :info))
+(defun/i make-logging-hooks (&key (stream *standard-output*) (level :info))
   "Create hooks that log requests and responses.
 
 STREAM - Output stream for logging (default: *standard-output*)
@@ -96,6 +102,8 @@ Returns a hooks structure with logging callbacks.
 Example:
   (setf *global-hooks* (make-logging-hooks))
   ;; All requests/responses will be logged"
+  (:feature observability)
+  (:purpose "Create pre-configured logging hooks for debugging")
   (let ((hooks (make-hooks)))
 
     (add-hook hooks :before-request

@@ -93,7 +93,14 @@
                         :force-string t
                         :read-timeout (getf (provider-options provider) :timeout 120))
             (dex:http-request-failed (e)
-              (values (dex:response-body e) (dex:response-status e)))))
+              (values (dex:response-body e) (dex:response-status e)))
+            (error (e)
+              (error 'provider-network-error
+                     :provider provider
+                     :url url
+                     :operation :completion
+                     :original-error e
+                     :message (format nil "Network error: ~A" e)))))
 
       (if (and (>= status-code 200) (< status-code 300))
           (yason:parse response-body)
@@ -196,7 +203,14 @@
                         :force-string t
                         :read-timeout (getf (provider-options provider) :timeout 120))
             (dex:http-request-failed (e)
-              (values (dex:response-body e) (dex:response-status e)))))
+              (values (dex:response-body e) (dex:response-status e)))
+            (error (e)
+              (error 'provider-network-error
+                     :provider provider
+                     :url url
+                     :operation :embedding
+                     :original-error e
+                     :message (format nil "Network error: ~A" e)))))
 
       (if (and (>= status-code 200) (< status-code 300))
           (yason:parse response-body)

@@ -8,7 +8,7 @@
 ;;;; OpenAI and compatible APIs use SSE format.
 ;;;; Anthropic uses a different event format.
 
-(defun parse-sse-line (line)
+(defun/i parse-sse-line (line)
   "Parse a single SSE line into (type . data) cons or nil.
 LINE - A string from the SSE stream
 
@@ -16,6 +16,8 @@ Returns:
   (:data . \"content\") for data lines
   (:event . \"event-name\") for event type lines
   NIL for empty lines or comments"
+  (:feature streaming-api)
+  (:purpose "Parse Server-Sent Events wire format into typed cons pairs")
   (cond
     ;; Empty line (event separator)
     ((or (null line) (string= line ""))
@@ -38,7 +40,7 @@ Returns:
          (cons (intern (string-upcase (subseq line 0 colon-pos)) :keyword)
                (string-trim '(#\Space) (subseq line (1+ colon-pos)))))))))
 
-(defun parse-openai-stream-data (data index)
+(defun/i parse-openai-stream-data (data index)
   "Parse OpenAI streaming data payload.
 DATA - The data portion after 'data: ' prefix
 INDEX - Current chunk index
@@ -47,6 +49,8 @@ Returns:
   :done if data is \"[DONE]\"
   stream-chunk object otherwise
   nil for empty data"
+  (:feature streaming-api)
+  (:purpose "Parse OpenAI-format SSE data into stream-chunk or done signal")
   (cond
     ;; Done signal
     ((string= data "[DONE]")
@@ -86,7 +90,7 @@ Returns:
 ;;;; - message_delta: Usage stats update
 ;;;; - message_stop: Stream complete
 
-(defun parse-anthropic-stream-event (event-type data index)
+(defun/i parse-anthropic-stream-event (event-type data index)
   "Parse Anthropic streaming event.
 EVENT-TYPE - The SSE event type (string)
 DATA - JSON data payload (string)
@@ -96,6 +100,8 @@ Returns:
   :done for message_stop
   stream-chunk for content
   nil for metadata events"
+  (:feature streaming-api)
+  (:purpose "Parse Anthropic-format typed SSE events into stream-chunks")
   (let ((json (when (and data (> (length data) 0))
                 (yason:parse data))))
     (cond
@@ -139,8 +145,10 @@ Returns:
 
 ;;;; Buffer Accumulation
 
-(defun buffer-append (buffer string)
+(defun/i buffer-append (buffer string)
   "Append STRING to adjustable string BUFFER. Amortized O(1) per character."
+  (:feature streaming-api)
+  (:purpose "Efficient string accumulation for streaming content")
   (loop for ch across string do (vector-push-extend ch buffer))
   buffer)
 
@@ -189,7 +197,21 @@ Returns:
            (error (e)
              (setf (stream-state stream) :error)
              (setf (stream-error-condition stream) e)
-             nil))
+             (restart-case
+                 (error 'stream-interrupted-error
+                        :stream-object stream
+                        :phase :reading
+                        :chunks-received (length (stream-chunks stream))
+                        :accumulated-content (stream-accumulated-content stream)
+                        :provider (stream-provider stream)
+                        :message (format nil "Stream interrupted: ~A" e))
+               (return-partial-content ()
+                 :report "Return content accumulated so far"
+                 nil)
+               (abort-stream ()
+                 :report "Abort and close stream"
+                 (setf (stream-state stream) :closed)
+                 nil))))
       ;; Cleanup: always close HTTP stream when done or on error
       (when (stream-closed-p stream)
         (handler-case (close http-stream)
@@ -236,7 +258,21 @@ Returns:
            (error (e)
              (setf (stream-state stream) :error)
              (setf (stream-error-condition stream) e)
-             nil))
+             (restart-case
+                 (error 'stream-interrupted-error
+                        :stream-object stream
+                        :phase :reading
+                        :chunks-received (length (stream-chunks stream))
+                        :accumulated-content (stream-accumulated-content stream)
+                        :provider (stream-provider stream)
+                        :message (format nil "Stream interrupted: ~A" e))
+               (return-partial-content ()
+                 :report "Return content accumulated so far"
+                 nil)
+               (abort-stream ()
+                 :report "Abort and close stream"
+                 (setf (stream-state stream) :closed)
+                 nil))))
       ;; Cleanup: always close HTTP stream when done or on error
       (when (stream-closed-p stream)
         (handler-case (close http-stream)

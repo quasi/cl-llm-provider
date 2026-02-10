@@ -81,7 +81,7 @@
 
 ;;;; Validator Spec Parsing
 
-(defun parse-validator-spec (spec)
+(defun/i parse-validator-spec (spec)
   "Parse a validator specification into a validator function.
 
    SPEC can be:
@@ -95,6 +95,8 @@
      - :enum - list of allowed values
 
    Returns a function (lambda (value) -> t/nil)."
+  (:feature tool-calling)
+  (:purpose "Compile validator specification into executable predicate")
   (cond
     ;; Already a function
     ((functionp spec) spec)
@@ -179,7 +181,7 @@
   (let ((fn (parse-validator-spec validator)))
     (validate-parameter fn parameter-name value tool)))
 
-(defun validate-tool-arguments (tool-definition arguments)
+(defun/i validate-tool-arguments (tool-definition arguments)
   "Validate ARGUMENTS against TOOL-DEFINITION's parameter validators.
 
    TOOL-DEFINITION - tool-definition object with parameter-validators slot
@@ -187,6 +189,8 @@
 
    Returns T if all validations pass.
    Signals tool-validation-error on first validation failure."
+  (:feature tool-calling)
+  (:purpose "Validate tool arguments against custom validators before execution")
   (let ((validators (tool-parameter-validators tool-definition)))
     (when validators
       (loop for (param-name . validator-spec) in validators
@@ -198,3 +202,10 @@
                                    value
                                    tool-definition)))
     t))
+
+;;; Telos Intent Annotations
+
+(defintent validate-parameter
+  :feature tool-calling
+  :purpose "Validate a single parameter value against a validator"
+  :role "Type-dispatched validation supporting functions, symbols, and spec plists")

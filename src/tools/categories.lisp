@@ -48,16 +48,20 @@
   '(:safe :moderate :dangerous)
   "Safety levels in order from least to most dangerous.")
 
-(defun safety-level-value (level)
+(defun/i safety-level-value (level)
   "Return numeric value for safety level (for comparison).
    :safe -> 0, :moderate -> 1, :dangerous -> 2"
+  (:feature tool-calling)
+  (:purpose "Convert safety level keyword to numeric value for comparison")
   (or (position level *safety-level-order*)
       (error "Invalid safety level: ~S (must be :safe, :moderate, or :dangerous)" level)))
 
-(defun safety-level<= (level1 level2)
+(defun/i safety-level<= (level1 level2)
   "Check if LEVEL1 is less than or equal to LEVEL2 in danger.
    E.g., (safety-level<= :safe :moderate) => T
          (safety-level<= :dangerous :safe) => NIL"
+  (:feature tool-calling)
+  (:purpose "Compare safety levels for access control decisions")
   (<= (safety-level-value level1) (safety-level-value level2)))
 
 (defun valid-safety-level-p (level)

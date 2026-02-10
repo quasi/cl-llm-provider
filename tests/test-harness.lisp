@@ -23,6 +23,7 @@
   :systems (:fiveam :alexandria :serapeum :dexador :yason
             :bordeaux-threads :cl-ppcre :uiop)
   :load ("src/package.lisp"
+         "src/features.lisp"
          "src/conditions.lisp"
          "src/types.lisp"
          "src/observability.lisp"
@@ -45,5 +46,6 @@
          "src/providers/openrouter.lisp"
          "src/providers/openai-compatible.lisp"
          "src/providers/gemini.lisp"
-         "src/api.lisp")
+         "src/api.lisp"
+         "src/recovery.lisp")
   :package :cl-llm-provider)

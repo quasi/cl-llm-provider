@@ -2,7 +2,7 @@
 
 ;;;; Tool Calling Support
 
-(defun define-tool (name description parameters
+(defun/i define-tool (name description parameters
                     &key required
                          safety-level
                          categories
@@ -62,6 +62,8 @@ Enhanced example:
     :requires-approval :always
     :parameter-validators '((\"path\" . (:pattern \"^/tmp/\")))
     :handler (lambda (args) (delete-file (getf args :path))))"
+  (:feature tool-calling)
+  (:purpose "Create tool definitions with schema, safety, and execution configuration")
   (make-instance 'tool-definition
                  :name name
                  :description description
@@ -77,7 +79,7 @@ Enhanced example:
                  :handler handler
                  :metadata metadata))
 
-(defun tool-calls (response)
+(defun/i tool-calls (response)
   "Extract tool calls from a completion response.
 
 RESPONSE - completion-response object from complete
@@ -93,9 +95,11 @@ Example:
         (format t \"Call ~A with ~A~%\"
                 (tool-call-name call)
                 (tool-call-arguments call)))))"
+  (:feature tool-calling)
+  (:purpose "Extract tool-call objects from completion response")
   (response-tool-calls response))
 
-(defun make-tool-result (tool-call-id result &key is-error)
+(defun/i make-tool-result (tool-call-id result &key is-error)
   "Create a tool result message to send back to the LLM.
 
 TOOL-CALL-ID - ID from the original tool call (string)
@@ -112,6 +116,8 @@ Example:
     (complete (append original-messages
                       (list (response-message response))
                       (list result))))"
+  (:feature tool-calling)
+  (:purpose "Create tool result message for LLM conversation continuation")
   (list :role "tool"
         :tool-call-id tool-call-id
         :content result
@@ -119,64 +125,114 @@ Example:
 
 ;;;; Internal Tool Validation
 
-(defun validate-tool-definition (tool)
+(defun/i validate-tool-definition (tool)
   "Validate a tool definition, signaling tool-schema-error if invalid.
 
 TOOL - tool-definition object
 
 Returns T if valid."
+  (:feature tool-calling)
+  (:purpose "Validate tool schema before sending to provider")
   (unless (and (tool-name tool)
                (stringp (tool-name tool))
                (not (string= (tool-name tool) "")))
-    (error 'tool-schema-error
-           :tool tool
-           :reason "Tool name must be a non-empty string"))
+    (restart-case
+        (error 'tool-schema-error
+               :tool tool
+               :reason "Tool name must be a non-empty string")
+      (skip-validation ()
+        :report "Skip this validation check"
+        nil)
+      (use-value (v)
+        :report "Supply a corrected tool name"
+        :interactive (lambda ()
+                       (format t "Enter tool name: ")
+                       (list (read-line)))
+        (setf (slot-value tool 'name) v))))
 
   (unless (and (tool-description tool)
                (stringp (tool-description tool)))
-    (error 'tool-schema-error
-           :tool tool
-           :reason "Tool description must be a string"))
+    (restart-case
+        (error 'tool-schema-error
+               :tool tool
+               :reason "Tool description must be a string")
+      (skip-validation ()
+        :report "Skip this validation check"
+        nil)
+      (use-value (v)
+        :report "Supply a corrected description"
+        :interactive (lambda ()
+                       (format t "Enter description: ")
+                       (list (read-line)))
+        (setf (slot-value tool 'description) v))))
 
   (unless (listp (tool-parameters tool))
-    (error 'tool-schema-error
-           :tool tool
-           :reason "Tool parameters must be a list"))
+    (restart-case
+        (error 'tool-schema-error
+               :tool tool
+               :reason "Tool parameters must be a list")
+      (skip-validation ()
+        :report "Skip this validation check"
+        nil)))
 
   ;; Validate each parameter
   (dolist (param (tool-parameters tool))
     (unless (getf param :name)
-      (error 'tool-schema-error
-             :tool tool
-             :reason (format nil "Parameter missing :name: ~S" param)))
+      (restart-case
+          (error 'tool-schema-error
+                 :tool tool
+                 :reason (format nil "Parameter missing :name: ~S" param))
+        (skip-validation ()
+          :report "Skip this validation check"
+          nil)))
 
     (unless (getf param :type)
-      (error 'tool-schema-error
-             :tool tool
-             :reason (format nil "Parameter missing :type: ~S" param)))
+      (restart-case
+          (error 'tool-schema-error
+                 :tool tool
+                 :reason (format nil "Parameter missing :type: ~S" param))
+        (skip-validation ()
+          :report "Skip this validation check"
+          nil)))
 
     (unless (member (getf param :type)
                     '(:string :integer :number :boolean :array :object))
-      (error 'tool-schema-error
-             :tool tool
-             :reason (format nil "Invalid parameter type ~S (must be one of :string, :integer, :number, :boolean, :array, :object)"
-                             (getf param :type)))))
+      (restart-case
+          (error 'tool-schema-error
+                 :tool tool
+                 :reason (format nil "Invalid parameter type ~S (must be one of :string, :integer, :number, :boolean, :array, :object)"
+                                 (getf param :type)))
+        (skip-validation ()
+          :report "Skip this validation check"
+          nil))))
 
   ;; Validate required list
   (when (tool-required-params tool)
     (unless (every #'stringp (tool-required-params tool))
-      (error 'tool-schema-error
-             :tool tool
-             :reason "Required parameter names must be strings")))
+      (restart-case
+          (error 'tool-schema-error
+                 :tool tool
+                 :reason "Required parameter names must be strings")
+        (skip-validation ()
+          :report "Skip this validation check"
+          nil))))
 
   t)
 
-(defun validate-tools (tools)
+(defun/i validate-tools (tools)
   "Validate a list of tool definitions.
 
 TOOLS - List of tool-definition objects
 
 Returns T if all valid, signals tool-schema-error otherwise."
+  (:feature tool-calling)
+  (:purpose "Validate all tools in a set before API call")
   (dolist (tool tools)
-    (validate-tool-definition tool))
+    (restart-case
+        (validate-tool-definition tool)
+      (skip-invalid-tool ()
+        :report (lambda (s)
+                  (format s "Skip invalid tool ~A and continue"
+                          (handler-case (tool-name tool) (error () "???"))))
+        nil)))
   t)

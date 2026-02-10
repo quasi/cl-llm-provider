@@ -147,10 +147,12 @@ Does NOT include API keys or other credentials."))
         :base-url (provider-base-url provider)
         :capabilities (provider-capabilities provider)))
 
-(defun provider-supports-p (provider capability)
+(defun/i provider-supports-p (provider capability)
   "Check if PROVIDER supports CAPABILITY (keyword).
 Example: (provider-supports-p provider :tools)
 Returns T if supported, NIL otherwise."
+  (:feature provider-protocol)
+  (:purpose "Check if provider supports a specific capability")
   (getf (provider-capabilities provider) capability))
 
 (defgeneric model-metadata (provider model-name)
@@ -346,10 +348,12 @@ Displays timing breakdown or 'not recorded' for each metric when profiling was d
 
 ;;;; HTTP Request Helpers
 
-(defun plist-to-hash (plist &key (test 'equal))
+(defun/i plist-to-hash (plist &key (test 'equal))
   "Convert a plist to a hash table with string keys.
 Keywords like :role become \"role\", :tool-call-id becomes \"tool_call_id\".
 Preserving string keys as-is."
+  (:feature http-transport)
+  (:purpose "Convert CL plists to JSON-compatible hash tables for API requests")
   (let ((hash (make-hash-table :test test)))
     (loop for (key value) on plist by #'cddr
           for string-key = (etypecase key
@@ -361,7 +365,7 @@ Preserving string keys as-is."
           do (setf (gethash string-key hash) value))
     hash))
 
-(defun make-http-headers (provider &key content-type additional-headers)
+(defun/i make-http-headers (provider &key content-type additional-headers)
   "Build HTTP headers for PROVIDER request.
 
 PROVIDER - Provider instance
@@ -369,17 +373,21 @@ CONTENT-TYPE - Content-Type header value (default: \"application/json\")
 ADDITIONAL-HEADERS - Alist of additional headers
 
 Returns alist of headers."
+  (:feature http-transport)
+  (:purpose "Construct HTTP headers with auth for provider API calls")
   (append
    (list (cons "Content-Type" (or content-type "application/json")))
    (when (provider-api-key provider)
      (list (cons "Authorization" (format nil "Bearer ~A" (provider-api-key provider)))))
    additional-headers))
 
-(defun extract-error-message (body)
+(defun/i extract-error-message (body)
   "Extract a user-friendly error message from response BODY.
 
 BODY can be a string, hash-table, or other structure.
 Returns a string describing the error."
+  (:feature http-transport)
+  (:purpose "Extract human-readable error from provider response bodies")
   (cond
     ;; String body - return as-is
     ((stringp body) body)
@@ -413,12 +421,71 @@ Returns a string describing the error."
     ;; Unknown format - convert to string
     (t (prin1-to-string body))))
 
-(defun handle-http-error (status-code body provider)
+(defun/i classify-api-error (status-code body provider error-message)
+  "Classify an HTTP error into a specific condition type based on status code and body.
+
+STATUS-CODE - HTTP status code
+BODY - Response body (hash-table or string)
+PROVIDER - Provider instance
+ERROR-MESSAGE - Pre-extracted error message string
+
+Returns a condition type symbol and extra initargs plist."
+  (:feature http-transport)
+  (:purpose "Inspect HTTP error details to signal the most specific condition type")
+  (let ((body-str (if (stringp body) (string-downcase body)
+                      (when (hash-table-p body)
+                        (string-downcase (or (extract-error-message body) ""))))))
+    (cond
+      ;; 404 with model reference → model not found
+      ((and (= status-code 404)
+            body-str
+            (or (search "model" body-str)
+                (search "not found" body-str)))
+       (values 'provider-model-not-found-error
+               (list :requested-model
+                     (when (hash-table-p body)
+                       (let ((err (gethash "error" body)))
+                         (when (hash-table-p err)
+                           (gethash "model" err)))))))
+
+      ;; 400 with context length / max tokens
+      ((and (= status-code 400)
+            body-str
+            (or (search "context_length" body-str)
+                (search "context length" body-str)
+                (search "max_tokens" body-str)
+                (search "maximum context" body-str)
+                (search "token limit" body-str)
+                (search "tokens exceeded" body-str)))
+       (values 'provider-context-length-error nil))
+
+      ;; 400 with content filter / safety
+      ((and (= status-code 400)
+            body-str
+            (or (search "content_filter" body-str)
+                (search "content filter" body-str)
+                (search "safety" body-str)
+                (search "harmful" body-str)
+                (search "flagged" body-str)))
+       (values 'provider-content-filter-error
+               (list :filter-reason error-message)))
+
+      ;; 503/529 → overloaded
+      ((member status-code '(503 529))
+       (values 'provider-overloaded-error
+               (list :retry-after (parse-retry-after body))))
+
+      ;; Default: generic provider-api-error
+      (t (values 'provider-api-error nil)))))
+
+(defun/i handle-http-error (status-code body provider)
   "Signal appropriate condition for HTTP error.
 
 STATUS-CODE - HTTP status code (integer)
 BODY - Response body (string or hash-table)
 PROVIDER - Provider instance"
+  (:feature http-transport)
+  (:purpose "Classify HTTP errors and signal typed conditions with restarts")
   (let ((error-message (extract-error-message body)))
     (case status-code
       (401 (restart-case
@@ -457,28 +524,33 @@ PROVIDER - Provider instance"
                  fallback))))
 
       (otherwise
-       (restart-case
-           (error 'provider-api-error
-                  :provider provider
-                  :status-code status-code
-                  :body body
-                  :message error-message)
-         (retry ()
-           :report "Retry the request")
-         (use-fallback-provider (fallback)
-           :report "Use a different provider"
-           :interactive (lambda ()
-                          (format t "Enter fallback provider: ")
-                          (list (read)))
-           fallback))))))
+       (multiple-value-bind (condition-type extra-initargs)
+           (classify-api-error status-code body provider error-message)
+         (restart-case
+             (apply #'error condition-type
+                    :provider provider
+                    :status-code status-code
+                    :body body
+                    :message error-message
+                    extra-initargs)
+           (retry ()
+             :report "Retry the request")
+           (use-fallback-provider (fallback)
+             :report "Use a different provider"
+             :interactive (lambda ()
+                            (format t "Enter fallback provider: ")
+                            (list (read)))
+             fallback)))))))
 
-(defun parse-retry-after (body)
+(defun/i parse-retry-after (body)
   "Extract retry-after value from error response body.
 
 BODY - Response body (hash-table, string, or other)
 
 Returns number of seconds to wait, or nil.
 Checks top-level keys, nested error objects, and string bodies."
+  (:feature http-transport)
+  (:purpose "Extract retry delay from rate-limit response for automatic retry")
   (flet ((extract-from-hash (ht)
            (or (gethash "retry_after" ht)
                (gethash "retry-after" ht)

@@ -20,11 +20,13 @@
                :yason
                :bordeaux-threads
                :cl-ppcre
-               :uiop)
+               :uiop
+               :telos)
   :components ((:module "src"
                 :components
                 ((:file "package")
-                 (:file "conditions" :depends-on ("package"))
+                 (:file "features" :depends-on ("package"))
+                 (:file "conditions" :depends-on ("package" "features"))
                  (:file "types" :depends-on ("package"))
                  (:file "observability" :depends-on ("types"))
                  (:file "config" :depends-on ("package" "conditions"))
@@ -54,7 +56,8 @@
                    (:file "openrouter")
                    (:file "openai-compatible")
                    (:file "gemini")))
-                 (:file "api" :depends-on ("package" "types" "conditions" "protocol" "config" "tools" "providers")))))
+                 (:file "api" :depends-on ("package" "types" "conditions" "protocol" "config" "tools" "providers"))
+                 (:file "recovery" :depends-on ("package" "features" "conditions" "config")))))
   :in-order-to ((test-op (test-op "cl-llm-provider/test"))))
 
 (defsystem "cl-llm-provider/test"
@@ -90,7 +93,8 @@
                  (:file "test-tokenizer" :depends-on ("test-harness"))
                  (:file "test-tools-enhanced" :depends-on ("test-harness"))
                  (:file "test-tools-integration" :depends-on ("test-harness"))
-                 (:file "test-tools-support" :depends-on ("test-harness")))))
+                 (:file "test-tools-support" :depends-on ("test-harness"))
+                 (:file "test-conditions-restarts" :depends-on ("test-harness")))))
   :perform (test-op (o c)
              (symbol-call :fiveam :run!
                           (find-symbol* :cl-llm-provider-suite :cl-llm-provider/test))))

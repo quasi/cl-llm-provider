@@ -46,7 +46,7 @@
 (defvar *tool-registry* nil
   "Global tool registry instance. Create with (make-tool-registry).")
 
-(defun make-tool-registry (&key name description default-safety-level approval-callback global-hooks)
+(defun/i make-tool-registry (&key name description default-safety-level approval-callback global-hooks)
   "Create a new tool registry.
 
    NAME - Human-readable name for the registry
@@ -54,6 +54,8 @@
    DEFAULT-SAFETY-LEVEL - Default safety level for registered tools (:safe, :moderate, :dangerous)
    APPROVAL-CALLBACK - Default approval callback function
    GLOBAL-HOOKS - Plist of global lifecycle hooks"
+  (:feature tool-calling)
+  (:purpose "Create central registry for tool management and lookup")
   (make-instance 'tool-registry
                  :name (or name "default")
                  :description description
@@ -209,7 +211,7 @@
   "Get all tools with :safe safety level."
   (search-tools registry :max-safety-level :safe))
 
-(defun tools-for-llm (&key (registry (ensure-registry))
+(defun/i tools-for-llm (&key (registry (ensure-registry))
                            max-safety-level
                            categories
                            exclude-requiring-approval)
@@ -221,9 +223,33 @@
    EXCLUDE-REQUIRING-APPROVAL - if T, exclude tools that require approval
 
    Returns list of tool-definition objects."
+  (:feature tool-calling)
+  (:purpose "Select and filter tools appropriate for LLM consumption")
   (let ((tools (search-tools registry
                              :max-safety-level max-safety-level
                              :categories categories)))
     (if exclude-requiring-approval
         (remove-if #'needs-approval-p tools)
         tools)))
+
+;;; Telos Intent Annotations
+
+(defintent tool-registry
+  :feature tool-calling
+  :purpose "Central registry for tool management with search and filtering"
+  :role "Named container mapping tool names to definitions with global hooks and safety defaults")
+
+(defintent register-tool
+  :feature tool-calling
+  :purpose "Add or replace a tool definition in a registry"
+  :role "Registry mutation operation ensuring unique names")
+
+(defintent find-tool
+  :feature tool-calling
+  :purpose "Look up a tool by exact name"
+  :role "Registry query for tool dispatch during execution")
+
+(defintent search-tools
+  :feature tool-calling
+  :purpose "Filter tools by name pattern, categories, or safety level"
+  :role "Registry query for tool discovery and selection")

@@ -4,7 +4,7 @@
 ;;;;
 ;;;; This file provides the main user-facing API functions.
 
-(defun make-provider (provider-type &key api-key base-url model options)
+(defun/i make-provider (provider-type &key api-key base-url model options)
   "Create a provider instance for API interactions.
 
 PROVIDER-TYPE - One of :anthropic, :gemini, :openai, :ollama, :openrouter, :openai-compatible
@@ -35,6 +35,8 @@ Example:
                  :api-key \"gsk_...\"
                  :base-url \"https://api.groq.com/openai/v1\"
                  :model \"mixtral-8x7b-32768\")"
+  (:feature completion-api)
+  (:purpose "Factory function to create configured provider instances")
   (let* ((provider-class (ecase provider-type
                            (:anthropic 'anthropic-provider)
                            (:gemini 'gemini-provider)
@@ -63,7 +65,7 @@ Example:
 
     provider))
 
-(defun complete (messages &key provider model max-tokens temperature
+(defun/i complete (messages &key provider model max-tokens temperature
                               system tools tool-choice stop
                               hooks on-request on-response on-error)
   "Send a completion request to an LLM provider.
@@ -115,6 +117,8 @@ Example:
                          (format t \"Sending request to ~A~%\" (getf info :provider)))
             :on-response (lambda (response timing)
                           (format t \"Got response in ~,2Fs~%\" timing)))"
+  (:feature completion-api)
+  (:purpose "Send completion request with provider resolution, hooks, and error handling")
   (let* ((prov (or provider *default-provider*))
          (mod (or model
                   (and prov (provider-default-model prov))
@@ -194,7 +198,7 @@ Example:
           (funcall on-error e))
         (error e)))))
 
-(defun embedding (input &key provider model dimensions)
+(defun/i embedding (input &key provider model dimensions)
   "Generate vector embeddings for text.
 
 INPUT - Text to embed (string or list of strings)
@@ -213,6 +217,8 @@ Example:
   ;; Batch embeddings
   (embedding '(\"First document\" \"Second document\" \"Third document\")
              :model \"text-embedding-3-small\")"
+  (:feature completion-api)
+  (:purpose "Generate vector embeddings with provider resolution and profiling")
   (let* ((prov (or provider *default-provider*))
          (mod (or model
                   (and prov (provider-default-model prov))
@@ -244,7 +250,7 @@ Example:
                                                      :dimensions dimensions)))
           (parse-embedding-response prov raw-response)))))
 
-(defun complete-stream (messages &key provider model max-tokens temperature
+(defun/i complete-stream (messages &key provider model max-tokens temperature
                                       system tools tool-choice stop
                                       on-chunk on-complete on-error)
   "Send a streaming completion request to an LLM provider.
@@ -280,6 +286,8 @@ Example:
     (loop for chunk = (read-stream-chunk stream)
           while chunk
           do (format t \"~A\" (chunk-delta chunk))))"
+  (:feature streaming-api)
+  (:purpose "Send streaming completion with optional chunk/complete/error callbacks")
   (let* ((prov (or provider *default-provider*))
          (mod (or model
                   (and prov (provider-default-model prov))

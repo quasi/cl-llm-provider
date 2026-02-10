@@ -168,7 +168,7 @@ Callers should treat context as read-only after execute-tool returns."))
 
 ;;;; Execute Multiple Tool Calls
 
-(defun execute-tool-calls (response &key registry skip-approval skip-validation
+(defun/i execute-tool-calls (response &key registry skip-approval skip-validation
                                          approval-callback max-safety-level
                                          on-missing-tool)
   "Execute all tool calls from a completion response.
@@ -186,6 +186,8 @@ Callers should treat context as read-only after execute-tool returns."))
 
    Returns list of (tool-call . result) pairs.
    For error cases, result may be a condition object if :skip is used."
+  (:feature tool-calling)
+  (:purpose "Batch-execute all tool calls from a completion response")
   (let ((calls (response-tool-calls response))
         (results nil))
     (dolist (call calls)
@@ -225,12 +227,14 @@ Callers should treat context as read-only after execute-tool returns."))
 
 ;;;; Result Processing Helpers
 
-(defun execution-results-to-tool-messages (results)
+(defun/i execution-results-to-tool-messages (results)
   "Convert execution results to tool result messages for LLM continuation.
 
    RESULTS - list of (tool-call . result) pairs from execute-tool-calls
 
    Returns list of message plists suitable for appending to conversation."
+  (:feature tool-calling)
+  (:purpose "Convert execution results to tool-result messages for conversation continuation")
   (loop for (call . result) in results
         collect (make-tool-result
                  (tool-call-id call)
@@ -240,3 +244,15 @@ Callers should treat context as read-only after execute-tool returns."))
                    (null "null")
                    (t (format nil "~S" result)))
                  :is-error (typep result 'condition))))
+
+;;; Telos Intent Annotations
+
+(defintent tool-execution-context
+  :feature tool-calling
+  :purpose "Track mutable state through tool execution lifecycle"
+  :role "Context object recording approval, timing, result, and error for a single tool invocation")
+
+(defintent execute-tool
+  :feature tool-calling
+  :purpose "Full lifecycle tool execution: safety check, validation, approval, hooks, handler"
+  :role "Primary entry point for executing a tool with all safety and lifecycle guarantees")

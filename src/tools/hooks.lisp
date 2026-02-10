@@ -60,13 +60,15 @@
 
 ;;;; Registry Global Hooks
 
-(defun invoke-global-hooks (registry hook-type tool-call &rest args)
+(defun/i invoke-global-hooks (registry hook-type tool-call &rest args)
   "Invoke global hooks from a registry.
 
    REGISTRY - tool-registry with global-hooks
    HOOK-TYPE - keyword :on-start, :on-complete, or :on-error
    TOOL-CALL - the tool-call object
    ARGS - arguments for the hook"
+  (:feature tool-calling)
+  (:purpose "Fire registry-wide lifecycle hooks for cross-cutting concerns")
   (when registry
     (let ((hooks (registry-global-hooks registry)))
       (when-let ((hook (getf hooks hook-type)))
@@ -77,11 +79,13 @@
 
 ;;;; Hook Helper Functions
 
-(defun safely-invoke-hook (hook &rest args)
+(defun/i safely-invoke-hook (hook &rest args)
   "Invoke HOOK with ARGS, catching and handling errors.
 
    Keyword argument :on-error can be a function to call with the error condition.
    Returns the hook's return value, or NIL if an error occurred."
+  (:feature tool-calling)
+  (:purpose "Error-safe hook invocation that prevents hook failures from disrupting execution")
   (let ((on-error-fn nil)
         (actual-args nil))
     ;; Find :on-error keyword position and extract positional args before it
@@ -180,3 +184,10 @@
             (apply hook args)
           (error (e)
             (warn "Error in combined ~A hook: ~A" hook-type e)))))))
+
+;;; Telos Intent Annotations
+
+(defintent invoke-tool-hook
+  :feature tool-calling
+  :purpose "Dispatch lifecycle hooks for tool execution events"
+  :role "EQL-specialized generic dispatching :on-start, :on-complete, :on-error hooks")

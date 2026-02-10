@@ -3,7 +3,7 @@
 
 ;;;; Approval Checking
 
-(defun needs-approval-p (tool-definition)
+(defun/i needs-approval-p (tool-definition)
   "Check if TOOL-DEFINITION requires approval before execution.
 
    Returns T if approval is required based on:
@@ -11,6 +11,8 @@
    - safety-level when requires-approval is :if-dangerous
 
    This function does NOT check if an approval callback is configured."
+  (:feature tool-calling)
+  (:purpose "Determine if tool requires human approval before execution")
   (let ((req (tool-requires-approval tool-definition)))
     (cond
       ((null req) nil)
@@ -52,7 +54,7 @@
 
 ;;;; Approval Result Normalization
 
-(defun normalize-approval-result (result original-arguments)
+(defun/i normalize-approval-result (result original-arguments)
   "Normalize approval callback result to standard format.
 
    Callbacks can return various formats:
@@ -67,6 +69,8 @@
    - decision: :approved, :rejected, or :edited
    - arguments: original or edited arguments
    - reason: rejection reason or NIL"
+  (:feature tool-calling)
+  (:purpose "Canonicalize varied approval callback return formats to standard triple")
   (cond
     ;; Simple approval
     ((eq result t) (values :approved original-arguments nil))
@@ -168,3 +172,10 @@
         (t
          (format stream "Invalid input. Rejecting.~%")
          :rejected)))))
+
+;;; Telos Intent Annotations
+
+(defintent request-tool-approval
+  :feature tool-calling
+  :purpose "Request human approval before tool execution via callback"
+  :role "Approval protocol entry point supporting approve/reject/edit decisions")

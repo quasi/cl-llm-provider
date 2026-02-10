@@ -308,3 +308,70 @@ Mutated internally via vector-push-extend in buffer-append.")
             (tool-call-name call)
             (loop for (key value) on (tool-call-arguments call) by #'cddr
                   collect (format nil "~A=~S" key value)))))
+
+;;;; Telos Intent Annotations (retrofit)
+
+(defintent llm-provider
+  :feature provider-protocol
+  :purpose "Base class for all LLM provider implementations"
+  :role "Abstract provider with shared slots: api-key, base-url, model, options")
+
+(defintent anthropic-provider
+  :feature provider-protocol
+  :purpose "Anthropic API provider for Claude models"
+  :role "Provider specialization for Anthropic's Messages API")
+
+(defintent openai-provider
+  :feature provider-protocol
+  :purpose "OpenAI API provider for GPT models"
+  :role "Provider specialization for OpenAI's Chat Completions API")
+
+(defintent ollama-provider
+  :feature provider-protocol
+  :purpose "Ollama local model provider"
+  :role "Provider specialization for local Ollama inference server")
+
+(defintent openrouter-provider
+  :feature provider-protocol
+  :purpose "OpenRouter multi-provider gateway"
+  :role "Provider specialization for OpenRouter's unified API")
+
+(defintent openai-compatible-provider
+  :feature provider-protocol
+  :purpose "OpenAI-compatible API provider for third-party services"
+  :role "Provider for Groq, Together, vLLM, and other OpenAI-compatible APIs")
+
+(defintent gemini-provider
+  :feature provider-protocol
+  :purpose "Google Gemini API provider"
+  :role "Provider specialization for Google's Gemini models via OpenAI-compatible endpoint")
+
+(defintent completion-response
+  :feature completion-api
+  :purpose "Normalized completion response from any provider"
+  :role "Unified response object with content, tool-calls, usage, and metadata")
+
+(defintent embedding-response
+  :feature completion-api
+  :purpose "Normalized embedding response from any provider"
+  :role "Unified response with embedding vectors, usage, and metadata")
+
+(defintent completion-stream
+  :feature streaming-api
+  :purpose "Active streaming completion response"
+  :role "Stateful stream object with chunk accumulation and HTTP stream lifecycle")
+
+(defintent stream-chunk
+  :feature streaming-api
+  :purpose "Single chunk from a streaming response"
+  :role "Incremental content unit with delta, finish-reason, and usage")
+
+(defintent tool-definition
+  :feature tool-calling
+  :purpose "Tool specification that can be passed to LLM for function calling"
+  :role "Schema container with name, parameters, safety level, and execution handler")
+
+(defintent tool-call
+  :feature tool-calling
+  :purpose "Tool invocation requested by the LLM"
+  :role "Carries call ID, tool name, and parsed arguments for execution")

@@ -295,14 +295,14 @@
 (define-condition/i provider-overloaded-error (provider-api-error)
   ((retry-after :initarg :retry-after
                 :initform nil
-                :reader error-overload-retry-after
+                :reader error-retry-after
                 :documentation "Seconds to wait before retrying."))
   (:feature http-transport)
   (:purpose "Signal provider is temporarily overloaded (HTTP 503/529)")
   (:documentation "Signaled when the provider is temporarily overloaded.")
   (:report (lambda (c s)
              (format s "Provider overloaded~@[, retry after ~A second~:P~]"
-                     (error-overload-retry-after c)))))
+                     (error-retry-after c)))))
 
 (define-condition/i provider-invalid-response-error (provider-api-error)
   ((expected-format :initarg :expected-format
@@ -406,7 +406,7 @@
 
 ;;; Streaming Conditions
 
-(define-condition/i stream-error-condition (llm-provider-error)
+(define-condition/i llm-stream-error (llm-provider-error)
   ((stream-object :initarg :stream
                   :initform nil
                   :reader error-stream-object
@@ -423,7 +423,7 @@
                      (error-stream-phase c)
                      (error-message c)))))
 
-(define-condition/i stream-interrupted-error (stream-error-condition)
+(define-condition/i stream-interrupted-error (llm-stream-error)
   ((chunks-received :initarg :chunks-received
                     :initform 0
                     :reader error-chunks-received
@@ -441,7 +441,7 @@
                      (when (error-accumulated-content c)
                        (length (error-accumulated-content c)))))))
 
-(define-condition/i stream-parse-error (stream-error-condition)
+(define-condition/i stream-parse-error (llm-stream-error)
   ((raw-chunk :initarg :raw-chunk
               :initform nil
               :reader error-raw-chunk

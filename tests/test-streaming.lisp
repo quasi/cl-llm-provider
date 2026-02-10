@@ -169,6 +169,28 @@
 
 ;;; Task 1.8: Add High-Level complete-stream API
 
+(fiveam:test stream-content-accumulation
+  "Test O(1) buffer accumulation and stream-accumulated-content API"
+  (let ((stream (make-instance 'cl-llm-provider::completion-stream
+                               :provider nil
+                               :model "test")))
+    ;; Initially empty
+    (fiveam:is (string= "" (cl-llm-provider:stream-accumulated-content stream)))
+    ;; Append some content
+    (cl-llm-provider::buffer-append
+     (cl-llm-provider::stream-accumulated-buffer stream) "Hello")
+    (fiveam:is (string= "Hello" (cl-llm-provider:stream-accumulated-content stream)))
+    ;; Append more
+    (cl-llm-provider::buffer-append
+     (cl-llm-provider::stream-accumulated-buffer stream) " World")
+    (fiveam:is (string= "Hello World" (cl-llm-provider:stream-accumulated-content stream)))
+    ;; Returns fresh simple string each time (not the internal buffer)
+    (let ((r1 (cl-llm-provider:stream-accumulated-content stream))
+          (r2 (cl-llm-provider:stream-accumulated-content stream)))
+      (fiveam:is (not (eq r1 r2)))             ; different objects
+      (fiveam:is (string= r1 r2))              ; same content
+      (fiveam:is (not (adjustable-array-p r1))))))  ; simple string
+
 (fiveam:test complete-stream-api-exists
   "Test that complete-stream function exists and is exported"
   (fiveam:is (fboundp 'cl-llm-provider:complete-stream)))

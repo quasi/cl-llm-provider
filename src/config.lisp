@@ -3,16 +3,27 @@
 ;;;; Configuration and Global Defaults
 
 (defvar *default-provider* nil
-  "Default provider used when :provider argument is omitted from API calls.")
+  "Default provider used when :provider argument is omitted from API calls.
+Thread safety: set at startup via CONFIGURE-DEFAULTS, or use WITH-PROVIDER
+for per-thread overrides.")
 
 (defvar *default-model* nil
-  "Default model used when :model argument is omitted and provider has no default.")
+  "Default model used when :model argument is omitted and provider has no default.
+Thread safety: set at startup via CONFIGURE-DEFAULTS, or use WITH-MODEL
+for per-thread overrides.")
 
 (defvar *default-max-tokens* 4096
-  "Default max-tokens when not specified.")
+  "Default max-tokens when not specified.
+Thread safety: set at startup via CONFIGURE-DEFAULTS, or pass :max-tokens
+explicitly for per-thread overrides.")
 
 (defvar *default-temperature* 1.0
-  "Default temperature when not specified.")
+  "Default temperature when not specified.
+Thread safety: set at startup via CONFIGURE-DEFAULTS, or pass :temperature
+explicitly for per-thread overrides.")
+
+(defvar *config-lock* (bt:make-lock "cl-llm-provider-config")
+  "Lock for thread-safe mutation of global configuration defaults.")
 
 ;;;; Configuration File Path
 
@@ -143,6 +154,9 @@ MODEL - Default model identifier
 MAX-TOKENS - Default max tokens
 TEMPERATURE - Default temperature
 
+Thread safety: Mutations are serialized with *CONFIG-LOCK*.
+For per-thread overrides, use WITH-PROVIDER, WITH-MODEL, or explicit keyword arguments.
+
 Example:
   (configure-defaults :provider (make-provider :anthropic)
                       :model \"claude-3-sonnet-20240229\"
@@ -150,17 +164,18 @@ Example:
 
   (configure-defaults :provider :anthropic
                       :model \"claude-3-sonnet-20240229\")"
-  (when provider
-    (setf *default-provider*
-          (etypecase provider
-            (llm-provider provider)
-            (keyword (make-provider provider)))))
-  (when model
-    (setf *default-model* model))
-  (when max-tokens
-    (setf *default-max-tokens* max-tokens))
-  (when temperature
-    (setf *default-temperature* temperature))
+  (bt:with-lock-held (*config-lock*)
+    (when provider
+      (setf *default-provider*
+            (etypecase provider
+              (llm-provider provider)
+              (keyword (make-provider provider)))))
+    (when model
+      (setf *default-model* model))
+    (when max-tokens
+      (setf *default-max-tokens* max-tokens))
+    (when temperature
+      (setf *default-temperature* temperature)))
   nil)
 
 ;;;; Convenience Macros

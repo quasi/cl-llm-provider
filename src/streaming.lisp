@@ -137,6 +137,13 @@ Returns:
       ;; These are metadata, not content
       (t nil))))
 
+;;;; Buffer Accumulation
+
+(defun buffer-append (buffer string)
+  "Append STRING to adjustable string BUFFER. Amortized O(1) per character."
+  (loop for ch across string do (vector-push-extend ch buffer))
+  buffer)
+
 ;;;; Stream Reading
 
 (defmethod read-stream-chunk :around ((stream completion-stream) &key timeout)
@@ -173,12 +180,9 @@ Returns:
                      (close http-stream)
                      (return nil))
                     (chunk
-                     ;; Accumulate content
-                     (setf (stream-accumulated-content stream)
-                           (concatenate 'string
-                                       (stream-accumulated-content stream)
-                                       (chunk-delta chunk)))
-                     (setf (chunk-content chunk) (stream-accumulated-content stream))
+                     ;; Accumulate content into buffer (amortized O(1))
+                     (buffer-append (stream-accumulated-buffer stream)
+                                    (chunk-delta chunk))
                      (push chunk (stream-chunks stream))
                      (return chunk))))))))
       (error (e)
@@ -218,11 +222,9 @@ Returns:
                       (close http-stream)
                       (return nil))
                      (chunk
-                      (setf (stream-accumulated-content stream)
-                            (concatenate 'string
-                                        (stream-accumulated-content stream)
-                                        (chunk-delta chunk)))
-                      (setf (chunk-content chunk) (stream-accumulated-content stream))
+                      ;; Accumulate content into buffer (amortized O(1))
+                      (buffer-append (stream-accumulated-buffer stream)
+                                     (chunk-delta chunk))
                       (push chunk (stream-chunks stream))
                       (return chunk)))))))))
       (error (e)

@@ -102,7 +102,7 @@
   ((content :initarg :content
             :initform ""
             :accessor chunk-content
-            :documentation "Accumulated content so far.")
+            :documentation "Text content of this chunk.")
    (delta :initarg :delta
           :initform ""
           :reader chunk-delta
@@ -150,10 +150,10 @@
            :initform nil
            :accessor stream-chunks
            :documentation "List of received chunks (for accumulation).")
-   (accumulated-content :initarg :accumulated-content
-                        :initform ""
-                        :accessor stream-accumulated-content
-                        :documentation "Full accumulated text content.")
+   (accumulated-buffer :initform (make-array 0 :element-type 'character
+                                               :adjustable t :fill-pointer 0)
+                       :reader stream-accumulated-buffer
+                       :documentation "Adjustable string buffer for O(1) amortized content accumulation.")
    (http-stream :initarg :http-stream
                 :initform nil
                 :accessor stream-http-stream
@@ -178,6 +178,13 @@
 (defun stream-closed-p (stream)
   "Return T if STREAM is closed (completed or errored)."
   (not (stream-open-p stream)))
+
+(defgeneric stream-accumulated-content (stream)
+  (:documentation "Return accumulated text content as a simple string."))
+
+(defmethod stream-accumulated-content ((stream completion-stream))
+  "Return accumulated content as a fresh simple string."
+  (copy-seq (stream-accumulated-buffer stream)))
 
 (defclass embedding-response ()
   ((embeddings :initarg :embeddings

@@ -2,9 +2,11 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Unified Common Lisp interface for multiple LLM providers.** Write once, switch providers with a single parameter. Works with Claude, GPT, Gemini, Ollama, and any OpenAI-compatible API.
+**Unified Common Lisp interface for multiple LLM providers with tool calling support.**  Works with Anthropic, OpenAI, Gemini, Ollama, Openrouter and any OpenAI-compatible API. Extensive use of conditions and telos to give agents more options to recover from errors.
 
-NOTE: Still alpha quality due to lack of verification of all features by humans. :-D . Lots of automated tests but manual testing still in sufficient. Please test test test and report issues.
+> This Library is designed by me and  implemented by Claude with my inputs. This is designed for consumption by Agents as well as Humans.  If you have a problem with Agent written code then this library is *not* for you. 
+
+Please test and report issues. Feedback and comments welcome.
 
 ## Why Use This?
 

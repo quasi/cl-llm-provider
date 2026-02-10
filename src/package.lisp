@@ -1,7 +1,7 @@
 (in-package :cl-user)
 
 (defpackage :cl-llm-provider
-  (:use :cl)
+  (:use :cl :telos)
   (:import-from :alexandria
                 :if-let
                 :when-let

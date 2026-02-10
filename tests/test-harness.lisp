@@ -23,6 +23,7 @@
   :systems (:fiveam :alexandria :serapeum :dexador :yason
             :bordeaux-threads :cl-ppcre :uiop)
   :load ("src/package.lisp"
+         "src/features.lisp"
          "src/conditions.lisp"
          "src/types.lisp"
          "src/observability.lisp"

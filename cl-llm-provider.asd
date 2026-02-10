@@ -20,11 +20,13 @@
                :yason
                :bordeaux-threads
                :cl-ppcre
-               :uiop)
+               :uiop
+               :telos)
   :components ((:module "src"
                 :components
                 ((:file "package")
-                 (:file "conditions" :depends-on ("package"))
+                 (:file "features" :depends-on ("package"))
+                 (:file "conditions" :depends-on ("package" "features"))
                  (:file "types" :depends-on ("package"))
                  (:file "observability" :depends-on ("types"))
                  (:file "config" :depends-on ("package" "conditions"))

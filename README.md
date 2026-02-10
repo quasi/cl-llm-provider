@@ -169,12 +169,16 @@ docs/
 
 **For LLM agents and automated code assistants** - Machine-optimized specifications:
 
+**Start here**: [AGENT.md](AGENT.md) - Entry point with workflows, quick reference, and navigation
+
 | Document | Purpose |
 |----------|---------|
-| **[docs/agent/SPEC.agent.md](docs/agent/SPEC.agent.md)** | 15 normative rules, 7 invariants, verification checklist |
-| **[docs/agent/PATTERNS.agent.md](docs/agent/PATTERNS.agent.md)** | 14 complete, runnable patterns |
-| **[docs/agent/API-SPEC.agent.md](docs/agent/API-SPEC.agent.md)** | Formal signatures and state machines |
-| **[docs/agent/METADATA-API.agent.md](docs/agent/METADATA-API.agent.md)** | 10 normative rules, 5 invariants, 10 complete patterns for metadata/introspection API |
+| **[docs/agent/core-SPEC.agent.md](docs/agent/core-SPEC.agent.md)** | 15 normative rules, 7 invariants, verification checklist |
+| **[docs/agent/core-PATTERNS.agent.md](docs/agent/core-PATTERNS.agent.md)** | 14 complete, runnable patterns |
+| **[docs/agent/core-API-SPEC.agent.md](docs/agent/core-API-SPEC.agent.md)** | Formal signatures and state machines |
+| **[docs/agent/metadata-API-SPEC.agent.md](docs/agent/metadata-API-SPEC.agent.md)** | 10 normative rules, 5 invariants, 10 complete patterns for metadata/introspection API |
+| **[docs/agent/streaming-observability-PATTERNS.agent.md](docs/agent/streaming-observability-PATTERNS.agent.md)** | Streaming and observability patterns |
+| **[docs/agent/streaming-observability-API-SPEC.agent.md](docs/agent/streaming-observability-API-SPEC.agent.md)** | Streaming and observability API specification |
 
 See [docs/agent/README.md](docs/agent/README.md) for agent documentation index.
 

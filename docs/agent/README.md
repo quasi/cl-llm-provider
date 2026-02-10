@@ -10,11 +10,28 @@ This directory contains machine-optimized documentation intended for:
 
 ## Documents
 
+**Entry Point**: [../../AGENT.md](../../AGENT.md) - Start here for workflows and quick reference
+
+### Core Library
+
 | Document | Purpose |
 |----------|---------|
-| **[SPEC.agent.md](SPEC.agent.md)** | Normative specification with 15 rules, 7 invariants, 5 anti-patterns, and verification checklist |
-| **[PATTERNS.agent.md](PATTERNS.agent.md)** | 14 complete, runnable code patterns covering all major workflows |
-| **[API-SPEC.agent.md](API-SPEC.agent.md)** | Formal method signatures, type specs, preconditions/postconditions, provider details, and state machines |
+| **[core-SPEC.agent.md](core-SPEC.agent.md)** | Normative specification with 15 rules, 7 invariants, 5 anti-patterns, and verification checklist |
+| **[core-PATTERNS.agent.md](core-PATTERNS.agent.md)** | 14 complete, runnable code patterns covering all major workflows |
+| **[core-API-SPEC.agent.md](core-API-SPEC.agent.md)** | Formal method signatures, type specs, preconditions/postconditions, provider details, and state machines |
+
+### Metadata & Introspection
+
+| Document | Purpose |
+|----------|---------|
+| **[metadata-API-SPEC.agent.md](metadata-API-SPEC.agent.md)** | 10 normative rules, 5 invariants, 10 complete patterns for metadata/introspection API |
+
+### Streaming & Observability
+
+| Document | Purpose |
+|----------|---------|
+| **[streaming-observability-PATTERNS.agent.md](streaming-observability-PATTERNS.agent.md)** | Complete patterns for streaming responses and observability hooks |
+| **[streaming-observability-API-SPEC.agent.md](streaming-observability-API-SPEC.agent.md)** | Formal API specification for streaming and observability |
 
 ## For Human Readers
 

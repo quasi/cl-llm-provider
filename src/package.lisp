@@ -151,6 +151,76 @@
    #:error-required-level
    #:error-actual-level
 
+   ;; Agent-oriented conditions (Phase 3)
+   #:provider-model-not-found-error
+   #:error-requested-model
+   #:error-available-models
+
+   #:provider-context-length-error
+   #:error-token-count
+   #:error-max-tokens
+   #:error-context-model
+
+   #:provider-content-filter-error
+   #:error-filter-reason
+
+   #:provider-overloaded-error
+   #:error-overload-retry-after
+
+   #:provider-invalid-response-error
+   #:error-expected-format
+   #:error-actual-value
+
+   #:provider-network-error
+   #:error-original-condition
+   #:error-url
+   #:error-operation
+
+   #:provider-timeout-error
+   #:error-timeout-seconds
+   #:error-timeout-phase
+
+   #:provider-json-parse-error
+   #:error-raw-body
+   #:error-parse-condition
+
+   #:provider-unsupported-operation
+   #:error-unsupported-operation
+   #:error-unsupported-provider-type
+
+   #:stream-error-condition
+   #:error-stream-object
+   #:error-stream-phase
+
+   #:stream-interrupted-error
+   #:error-chunks-received
+   #:error-accumulated-content
+
+   #:stream-parse-error
+   #:error-raw-chunk
+   #:error-chunk-parse-condition
+
+   #:tool-execution-error
+   #:error-arguments
+   #:error-execution-cause
+
+   #:tool-not-found-error
+   #:error-missing-tool-name
+   #:error-available-tools
+
+   #:tool-handler-missing-error
+
+   #:llm-provider-warning
+   #:warning-provider
+   #:warning-message
+
+   #:provider-deprecation-warning
+   #:warning-deprecated-feature
+   #:warning-replacement
+
+   ;; Error classification
+   #:classify-api-error
+
    ;; Protocol (for extensibility)
    #:send-completion-request
    #:parse-completion-response

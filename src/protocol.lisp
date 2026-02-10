@@ -421,6 +421,62 @@ Returns a string describing the error."
     ;; Unknown format - convert to string
     (t (prin1-to-string body))))
 
+(defun/i classify-api-error (status-code body provider error-message)
+  "Classify an HTTP error into a specific condition type based on status code and body.
+
+STATUS-CODE - HTTP status code
+BODY - Response body (hash-table or string)
+PROVIDER - Provider instance
+ERROR-MESSAGE - Pre-extracted error message string
+
+Returns a condition type symbol and extra initargs plist."
+  (:feature http-transport)
+  (:purpose "Inspect HTTP error details to signal the most specific condition type")
+  (let ((body-str (if (stringp body) (string-downcase body)
+                      (when (hash-table-p body)
+                        (string-downcase (or (extract-error-message body) ""))))))
+    (cond
+      ;; 404 with model reference → model not found
+      ((and (= status-code 404)
+            body-str
+            (or (search "model" body-str)
+                (search "not found" body-str)))
+       (values 'provider-model-not-found-error
+               (list :requested-model
+                     (when (hash-table-p body)
+                       (let ((err (gethash "error" body)))
+                         (when (hash-table-p err)
+                           (gethash "model" err)))))))
+
+      ;; 400 with context length / max tokens
+      ((and (= status-code 400)
+            body-str
+            (or (search "context_length" body-str)
+                (search "context length" body-str)
+                (search "max_tokens" body-str)
+                (search "maximum context" body-str)
+                (search "token" body-str)))
+       (values 'provider-context-length-error nil))
+
+      ;; 400 with content filter / safety
+      ((and (= status-code 400)
+            body-str
+            (or (search "content_filter" body-str)
+                (search "content filter" body-str)
+                (search "safety" body-str)
+                (search "harmful" body-str)
+                (search "flagged" body-str)))
+       (values 'provider-content-filter-error
+               (list :filter-reason error-message)))
+
+      ;; 503/529 → overloaded
+      ((member status-code '(503 529))
+       (values 'provider-overloaded-error
+               (list :retry-after (parse-retry-after body))))
+
+      ;; Default: generic provider-api-error
+      (t (values 'provider-api-error nil)))))
+
 (defun/i handle-http-error (status-code body provider)
   "Signal appropriate condition for HTTP error.
 
@@ -467,20 +523,23 @@ PROVIDER - Provider instance"
                  fallback))))
 
       (otherwise
-       (restart-case
-           (error 'provider-api-error
-                  :provider provider
-                  :status-code status-code
-                  :body body
-                  :message error-message)
-         (retry ()
-           :report "Retry the request")
-         (use-fallback-provider (fallback)
-           :report "Use a different provider"
-           :interactive (lambda ()
-                          (format t "Enter fallback provider: ")
-                          (list (read)))
-           fallback))))))
+       (multiple-value-bind (condition-type extra-initargs)
+           (classify-api-error status-code body provider error-message)
+         (restart-case
+             (apply #'error condition-type
+                    :provider provider
+                    :status-code status-code
+                    :body body
+                    :message error-message
+                    extra-initargs)
+           (retry ()
+             :report "Retry the request")
+           (use-fallback-provider (fallback)
+             :report "Use a different provider"
+             :interactive (lambda ()
+                            (format t "Enter fallback provider: ")
+                            (list (read)))
+             fallback)))))))
 
 (defun/i parse-retry-after (body)
   "Extract retry-after value from error response body.

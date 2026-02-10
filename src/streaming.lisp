@@ -197,7 +197,21 @@ Returns:
            (error (e)
              (setf (stream-state stream) :error)
              (setf (stream-error-condition stream) e)
-             nil))
+             (restart-case
+                 (error 'stream-interrupted-error
+                        :stream-object stream
+                        :phase :reading
+                        :chunks-received (length (stream-chunks stream))
+                        :accumulated-content (stream-accumulated-content stream)
+                        :provider (stream-provider stream)
+                        :message (format nil "Stream interrupted: ~A" e))
+               (return-partial-content ()
+                 :report "Return content accumulated so far"
+                 nil)
+               (abort-stream ()
+                 :report "Abort and close stream"
+                 (setf (stream-state stream) :closed)
+                 nil))))
       ;; Cleanup: always close HTTP stream when done or on error
       (when (stream-closed-p stream)
         (handler-case (close http-stream)
@@ -244,7 +258,21 @@ Returns:
            (error (e)
              (setf (stream-state stream) :error)
              (setf (stream-error-condition stream) e)
-             nil))
+             (restart-case
+                 (error 'stream-interrupted-error
+                        :stream-object stream
+                        :phase :reading
+                        :chunks-received (length (stream-chunks stream))
+                        :accumulated-content (stream-accumulated-content stream)
+                        :provider (stream-provider stream)
+                        :message (format nil "Stream interrupted: ~A" e))
+               (return-partial-content ()
+                 :report "Return content accumulated so far"
+                 nil)
+               (abort-stream ()
+                 :report "Abort and close stream"
+                 (setf (stream-state stream) :closed)
+                 nil))))
       ;; Cleanup: always close HTTP stream when done or on error
       (when (stream-closed-p stream)
         (handler-case (close http-stream)

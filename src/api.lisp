@@ -133,12 +133,28 @@ Example:
                             :has-tools (not (null tools)))))
 
     (unless prov
-      (error 'provider-configuration-error
-             :message "No provider specified and *default-provider* is nil"))
+      (setf prov
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No provider specified and *default-provider* is nil")
+              (use-provider (p)
+                :report "Supply a provider to use"
+                :interactive (lambda ()
+                               (format t "Enter provider form: ")
+                               (list (eval (read))))
+                p))))
 
     (unless mod
-      (error 'provider-configuration-error
-             :message "No model specified and no default model configured"))
+      (setf mod
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No model specified and no default model configured")
+              (use-model (m)
+                :report "Supply a model name"
+                :interactive (lambda ()
+                               (format t "Enter model name: ")
+                               (list (read-line)))
+                m))))
 
     ;; Validate tools if provided
     (when tools
@@ -150,53 +166,53 @@ Example:
     (when on-request
       (funcall on-request request-info))
 
-    (handler-case
-        ;; Send request and parse response (with performance tracking if enabled)
-        (let ((response
-                (if *performance-profiling*
-                    (let ((*performance-stats* (make-performance-stats)))
-                      (let* ((raw-response (send-completion-request prov messages
-                                                                     :model mod
-                                                                     :max-tokens max-tok
-                                                                     :temperature temp
-                                                                     :system system
-                                                                     :tools tools
-                                                                     :tool-choice tool-choice
-                                                                     :stop stop))
-                             (resp (with-performance-timing (:decode-time)
-                                     (parse-completion-response prov raw-response
-                                                               :performance nil))))
-                        ;; Update response with complete performance stats (including decode time)
-                        (setf (response-performance resp) (get-performance-stats))
-                        resp))
-                    ;; No profiling - standard path
-                    (let ((raw-response (send-completion-request prov messages
-                                                                  :model mod
-                                                                  :max-tokens max-tok
-                                                                  :temperature temp
-                                                                  :system system
-                                                                  :tools tools
-                                                                  :tool-choice tool-choice
-                                                                  :stop stop)))
-                      (parse-completion-response prov raw-response))))
-              (timing (/ (- (get-internal-real-time) start-time)
-                        internal-time-units-per-second)))
+    ;; Use handler-bind (not handler-case) to preserve restart stack from deeper calls.
+    ;; This allows agents using handler-bind + invoke-restart to recover from errors
+    ;; signaled by handle-http-error, provider methods, etc.
+    (handler-bind
+        ((error (lambda (e)
+                  (when all-hooks
+                    (invoke-hooks all-hooks :on-error prov mod e))
+                  (when on-error
+                    (funcall on-error e)))))
+      ;; Send request and parse response (with performance tracking if enabled)
+      (let ((response
+              (if *performance-profiling*
+                  (let ((*performance-stats* (make-performance-stats)))
+                    (let* ((raw-response (send-completion-request prov messages
+                                                                   :model mod
+                                                                   :max-tokens max-tok
+                                                                   :temperature temp
+                                                                   :system system
+                                                                   :tools tools
+                                                                   :tool-choice tool-choice
+                                                                   :stop stop))
+                           (resp (with-performance-timing (:decode-time)
+                                   (parse-completion-response prov raw-response
+                                                             :performance nil))))
+                      ;; Update response with complete performance stats (including decode time)
+                      (setf (response-performance resp) (get-performance-stats))
+                      resp))
+                  ;; No profiling - standard path
+                  (let ((raw-response (send-completion-request prov messages
+                                                                :model mod
+                                                                :max-tokens max-tok
+                                                                :temperature temp
+                                                                :system system
+                                                                :tools tools
+                                                                :tool-choice tool-choice
+                                                                :stop stop)))
+                    (parse-completion-response prov raw-response))))
+            (timing (/ (- (get-internal-real-time) start-time)
+                      internal-time-units-per-second)))
 
-          ;; Invoke after-response hooks
-          (when all-hooks
-            (invoke-hooks all-hooks :after-response prov mod response timing))
-          (when on-response
-            (funcall on-response response timing))
-
-          response)
-
-      (error (e)
-        ;; Invoke error hooks
+        ;; Invoke after-response hooks (only on success path)
         (when all-hooks
-          (invoke-hooks all-hooks :on-error prov mod e))
-        (when on-error
-          (funcall on-error e))
-        (error e)))))
+          (invoke-hooks all-hooks :after-response prov mod response timing))
+        (when on-response
+          (funcall on-response response timing))
+
+        response))))
 
 (defun/i embedding (input &key provider model dimensions)
   "Generate vector embeddings for text.
@@ -225,12 +241,28 @@ Example:
                   *default-model*)))
 
     (unless prov
-      (error 'provider-configuration-error
-             :message "No provider specified and *default-provider* is nil"))
+      (setf prov
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No provider specified and *default-provider* is nil")
+              (use-provider (p)
+                :report "Supply a provider to use"
+                :interactive (lambda ()
+                               (format t "Enter provider form: ")
+                               (list (eval (read))))
+                p))))
 
     (unless mod
-      (error 'provider-configuration-error
-             :message "No model specified and no default model configured"))
+      (setf mod
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No model specified and no default model configured")
+              (use-model (m)
+                :report "Supply a model name"
+                :interactive (lambda ()
+                               (format t "Enter model name: ")
+                               (list (read-line)))
+                m))))
 
     ;; Send request and parse response (with performance tracking if enabled)
     (if *performance-profiling*
@@ -296,12 +328,28 @@ Example:
          (temp (or temperature *default-temperature*)))
 
     (unless prov
-      (error 'provider-configuration-error
-             :message "No provider specified and *default-provider* is nil"))
+      (setf prov
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No provider specified and *default-provider* is nil")
+              (use-provider (p)
+                :report "Supply a provider to use"
+                :interactive (lambda ()
+                               (format t "Enter provider form: ")
+                               (list (eval (read))))
+                p))))
 
     (unless mod
-      (error 'provider-configuration-error
-             :message "No model specified and no default model configured"))
+      (setf mod
+            (restart-case
+                (error 'provider-configuration-error
+                       :message "No model specified and no default model configured")
+              (use-model (m)
+                :report "Supply a model name"
+                :interactive (lambda ()
+                               (format t "Enter model name: ")
+                               (list (read-line)))
+                m))))
 
     ;; Validate tools if provided
     (when tools

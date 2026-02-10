@@ -152,7 +152,14 @@
                         :content encoded-body
                         :force-string t)
             (dex:http-request-failed (e)
-              (values (dex:response-body e) (dex:response-status e)))))
+              (values (dex:response-body e) (dex:response-status e)))
+            (error (e)
+              (error 'provider-network-error
+                     :provider provider
+                     :url url
+                     :operation :completion
+                     :original-error e
+                     :message (format nil "Network error: ~A" e)))))
 
       (if (and (>= status-code 200) (< status-code 300))
           (yason:parse response-body)
@@ -264,23 +271,37 @@
     ;; Make streaming request
     (let ((encoded-body (with-output-to-string (s)
                          (yason:encode body s))))
-      (multiple-value-bind (response-stream status-code)
-          (dex:post url
-                    :headers headers
-                    :content encoded-body
-                    :want-stream t)
-        (if (and (>= status-code 200) (< status-code 300))
-            (make-instance 'completion-stream
-                           :provider provider
-                           :model (or model (provider-default-model provider))
-                           :http-stream response-stream
-                           :state :open)
-            (handle-http-error status-code
-                              (handler-case
-                                  (let ((body-text (alexandria:read-stream-content-into-string response-stream)))
-                                    (yason:parse body-text))
-                                (error () "Stream error"))
-                              provider))))))
+      (handler-case
+          (multiple-value-bind (response-stream status-code)
+              (dex:post url
+                        :headers headers
+                        :content encoded-body
+                        :want-stream t)
+            (if (and (>= status-code 200) (< status-code 300))
+                (make-instance 'completion-stream
+                               :provider provider
+                               :model (or model (provider-default-model provider))
+                               :http-stream response-stream
+                               :state :open)
+                (handle-http-error status-code
+                                  (handler-case
+                                      (let ((body-text (alexandria:read-stream-content-into-string response-stream)))
+                                        (yason:parse body-text))
+                                    (error () "Stream error"))
+                                  provider)))
+        (dex:http-request-failed (e)
+          (handle-http-error (dex:response-status e)
+                            (handler-case
+                                (yason:parse (dex:response-body e))
+                              (error () (dex:response-body e)))
+                            provider))
+        (error (e)
+          (error 'provider-network-error
+                 :provider provider
+                 :url url
+                 :operation :streaming
+                 :original-error e
+                 :message (format nil "Network error: ~A" e)))))))
 
 ;; Anthropic doesn't support embeddings yet, use default error
 (defmethod send-embedding-request ((provider anthropic-provider) input

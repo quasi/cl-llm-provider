@@ -421,17 +421,21 @@ Returns a string describing the error."
     ;; Unknown format - convert to string
     (t (prin1-to-string body))))
 
-(defun/i classify-api-error (status-code body provider error-message)
-  "Classify an HTTP error into a specific condition type based on status code and body.
+(defgeneric classify-api-error (provider status-code body error-message)
+  (:documentation "Classify an HTTP error into a specific condition type based on status code and body.
 
+PROVIDER - Provider instance (dispatches for provider-specific classification)
 STATUS-CODE - HTTP status code
 BODY - Response body (hash-table or string)
-PROVIDER - Provider instance
 ERROR-MESSAGE - Pre-extracted error message string
 
-Returns a condition type symbol and extra initargs plist."
-  (:feature http-transport)
-  (:purpose "Inspect HTTP error details to signal the most specific condition type")
+Returns two values: a condition type symbol and extra initargs plist.
+
+Specialize this generic function per provider to handle provider-specific error
+formats. The default method handles common patterns across all providers."))
+
+(defmethod classify-api-error ((provider llm-provider) status-code body error-message)
+  "Default classification using common HTTP error patterns."
   (let ((body-str (if (stringp body) (string-downcase body)
                       (when (hash-table-p body)
                         (string-downcase (or (extract-error-message body) ""))))))
@@ -477,6 +481,11 @@ Returns a condition type symbol and extra initargs plist."
 
       ;; Default: generic provider-api-error
       (t (values 'provider-api-error nil)))))
+
+(defintent classify-api-error
+  :feature http-transport
+  :purpose "Classify HTTP errors into specific condition types for agent recovery"
+  :role "Extensible dispatch point for provider-specific error classification")
 
 (defun/i handle-http-error (status-code body provider)
   "Signal appropriate condition for HTTP error.
@@ -525,7 +534,7 @@ PROVIDER - Provider instance"
 
       (otherwise
        (multiple-value-bind (condition-type extra-initargs)
-           (classify-api-error status-code body provider error-message)
+           (classify-api-error provider status-code body error-message)
          (restart-case
              (apply #'error condition-type
                     :provider provider

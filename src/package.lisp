@@ -165,7 +165,7 @@
    #:error-filter-reason
 
    #:provider-overloaded-error
-   #:error-overload-retry-after
+   ;; error-retry-after is shared with provider-rate-limit-error (already exported above)
 
    #:provider-invalid-response-error
    #:error-expected-format
@@ -188,7 +188,8 @@
    #:error-unsupported-operation
    #:error-unsupported-provider-type
 
-   #:stream-error-condition
+   #:llm-stream-error
+   #:stream-error-condition  ; slot accessor on completion-stream (distinct from llm-stream-error condition)
    #:error-stream-object
    #:error-stream-phase
 
@@ -224,6 +225,7 @@
    ;; Agent recovery helpers
    #:available-recovery-options
    #:transient-error-p
+   #:provider-retry-after
    #:default-backoff
    #:retry-wait-time
    #:make-retry-handler

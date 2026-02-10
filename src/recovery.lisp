@@ -72,6 +72,18 @@ Returns seconds to wait. Adds jitter (0.5x-1.5x) to avoid thundering herd."
   (let ((base (expt 2 (1- attempt))))
     (min 60 (* base (+ 0.5 (random 1.0))))))
 
+(defun/i provider-retry-after (condition)
+  "Extract retry-after hint from CONDITION, or nil if none.
+
+Works on any condition that has an error-retry-after reader
+(provider-rate-limit-error, provider-overloaded-error)."
+  (:feature error-recovery)
+  (:purpose "Extract provider-supplied retry delay from condition")
+  (typecase condition
+    (provider-rate-limit-error (error-retry-after condition))
+    (provider-overloaded-error (error-retry-after condition))
+    (t nil)))
+
 (defun/i retry-wait-time (condition attempt backoff-base)
   "Compute wait time for retry ATTEMPT, respecting provider hints.
 
@@ -83,17 +95,8 @@ Returns seconds to wait. Respects retry-after hints from rate-limit
 and overloaded conditions. Falls back to exponential backoff with jitter."
   (:feature error-recovery)
   (:purpose "Determine retry delay from provider hints or exponential backoff")
-  (cond
-    ;; Rate limit with retry-after hint
-    ((and (typep condition 'provider-rate-limit-error)
-          (error-retry-after condition))
-     (error-retry-after condition))
-    ;; Overloaded with retry-after
-    ((and (typep condition 'provider-overloaded-error)
-          (error-overload-retry-after condition))
-     (error-overload-retry-after condition))
-    ;; Exponential backoff with jitter
-    (t (* backoff-base (default-backoff attempt)))))
+  (or (provider-retry-after condition)
+      (* backoff-base (default-backoff attempt))))
 
 ;;; Retry Handler
 
@@ -131,16 +134,9 @@ Example:
         (incf attempts)
         (when on-retry
           (funcall on-retry condition attempts))
-        ;; Determine wait time
-        (let ((wait-time
-                (cond
-                  ((and (typep condition 'provider-rate-limit-error)
-                        (error-retry-after condition))
-                   (error-retry-after condition))
-                  ((and (typep condition 'provider-overloaded-error)
-                        (error-overload-retry-after condition))
-                   (error-overload-retry-after condition))
-                  (t (funcall backoff-fn attempts)))))
+        ;; Determine wait time (respect provider hints, fall back to backoff-fn)
+        (let ((wait-time (or (provider-retry-after condition)
+                             (funcall backoff-fn attempts))))
           (when (and wait-time (> wait-time 0))
             (sleep wait-time)))
         ;; Try to invoke a retry restart
@@ -174,6 +170,12 @@ The macro re-executes BODY on each retry (not just the failing sub-call).
 Fallback providers are tried by rebinding *default-provider*, so they work
 with code that uses the default provider. Code that explicitly passes
 :provider will not be affected by fallback.
+
+CAVEAT: This macro installs an outermost handler-bind on llm-provider-error.
+Do NOT nest with-auto-recovery inside other handler-bind forms that handle
+llm-provider-error — the outer handler fires first and may re-execute the
+body before inner handlers get a chance. Use with-auto-recovery as the
+outermost recovery layer only.
 
 Example:
   ;; Simple retry

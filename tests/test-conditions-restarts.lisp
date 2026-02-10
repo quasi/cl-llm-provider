@@ -69,7 +69,7 @@
       (provider-overloaded-error (e)
         (setf caught e)))
     (fiveam:is (not (null caught)))
-    (fiveam:is (= 30 (error-overload-retry-after caught)))
+    (fiveam:is (= 30 (error-retry-after caught)))
     (fiveam:is (= 503 (error-status-code caught)))))
 
 (fiveam:test condition-invalid-response
@@ -283,7 +283,7 @@
                        provider-timeout-error
                        provider-json-parse-error
                        provider-unsupported-operation
-                       stream-error-condition
+                       llm-stream-error
                        stream-interrupted-error
                        stream-parse-error
                        tool-schema-error
@@ -303,15 +303,15 @@
                  (format nil "~A should be caught as llm-provider-error" cond-type)))))
 
 (fiveam:test condition-inheritance-stream-errors
-  "Stream error subtypes caught by stream-error-condition handler"
+  "Stream error subtypes caught by llm-stream-error handler"
   (dolist (cond-type '(stream-interrupted-error stream-parse-error))
     (let ((caught nil))
       (handler-case
           (error cond-type :message "test")
-        (stream-error-condition (e)
+        (llm-stream-error (e)
           (setf caught e)))
       (fiveam:is (not (null caught))
-                 (format nil "~A should be caught as stream-error-condition" cond-type)))))
+                 (format nil "~A should be caught as llm-stream-error" cond-type)))))
 
 (fiveam:test condition-timeout-inherits-network
   "provider-timeout-error inherits from provider-network-error"
@@ -329,44 +329,49 @@
 
 (fiveam:test classify-model-not-found
   "classify-api-error detects model-not-found from 404 + body"
-  (let* ((body (make-hash-table :test 'equal))
+  (let* ((provider (make-provider :ollama :model "test"))
+         (body (make-hash-table :test 'equal))
          (err (make-hash-table :test 'equal)))
     (setf (gethash "message" err) "The model gpt-5 does not exist")
     (setf (gethash "error" body) err)
     (multiple-value-bind (cond-type extra)
-        (classify-api-error 404 body nil "Model not found")
+        (classify-api-error provider 404 body "Model not found")
       (declare (ignore extra))
       (fiveam:is (eq 'provider-model-not-found-error cond-type)))))
 
 (fiveam:test classify-context-length
   "classify-api-error detects context length from 400 + body"
-  (let ((body "maximum context length exceeded, token count 150000"))
+  (let ((provider (make-provider :ollama :model "test"))
+        (body "maximum context length exceeded, token count 150000"))
     (multiple-value-bind (cond-type extra)
-        (classify-api-error 400 body nil "context length exceeded")
+        (classify-api-error provider 400 body "context length exceeded")
       (declare (ignore extra))
       (fiveam:is (eq 'provider-context-length-error cond-type)))))
 
 (fiveam:test classify-content-filter
   "classify-api-error detects content filter from 400 + body"
-  (let ((body "content flagged by safety filter"))
+  (let ((provider (make-provider :ollama :model "test"))
+        (body "content flagged by safety filter"))
     (multiple-value-bind (cond-type extra)
-        (classify-api-error 400 body nil "content filtered")
+        (classify-api-error provider 400 body "content filtered")
       (declare (ignore extra))
       (fiveam:is (eq 'provider-content-filter-error cond-type)))))
 
 (fiveam:test classify-overloaded
   "classify-api-error detects overloaded from 503"
-  (multiple-value-bind (cond-type extra)
-      (classify-api-error 503 "server busy" nil "overloaded")
-    (declare (ignore extra))
-    (fiveam:is (eq 'provider-overloaded-error cond-type))))
+  (let ((provider (make-provider :ollama :model "test")))
+    (multiple-value-bind (cond-type extra)
+        (classify-api-error provider 503 "server busy" "overloaded")
+      (declare (ignore extra))
+      (fiveam:is (eq 'provider-overloaded-error cond-type)))))
 
 (fiveam:test classify-generic-error
   "classify-api-error falls back to provider-api-error for unknown errors"
-  (multiple-value-bind (cond-type extra)
-      (classify-api-error 500 "internal server error" nil "server error")
-    (declare (ignore extra))
-    (fiveam:is (eq 'provider-api-error cond-type))))
+  (let ((provider (make-provider :ollama :model "test")))
+    (multiple-value-bind (cond-type extra)
+        (classify-api-error provider 500 "internal server error" "server error")
+      (declare (ignore extra))
+      (fiveam:is (eq 'provider-api-error cond-type)))))
 
 ;;;; ============================================================
 ;;;; Section 4: Restart Tests (handler-bind + invoke-restart)
@@ -418,17 +423,17 @@
             (declare (ignore e))
             (incf attempt)
             (when (<= attempt 1)
-              (let ((r (find-restart 'cl-llm-provider::retry)))
+              (let ((r (find-restart 'retry)))
                 (when r (invoke-restart r)))))))
       (restart-case
           (error 'provider-rate-limit-error
                  :status-code 429
                  :retry-after 1
                  :message "rate limited")
-        (cl-llm-provider::wait-and-retry ()
+        (wait-and-retry ()
           :report "Wait and retry"
           :waited)
-        (cl-llm-provider::retry ()
+        (retry ()
           :report "Retry immediately"
           :retried)))
     (fiveam:is (= 1 attempt))))
@@ -441,15 +446,15 @@
                 ((provider-rate-limit-error
                   (lambda (e)
                     (declare (ignore e))
-                    (let ((r (find-restart 'cl-llm-provider::use-fallback-provider)))
+                    (let ((r (find-restart 'use-fallback-provider)))
                       (when r (invoke-restart r fallback-provider))))))
               (restart-case
                   (error 'provider-rate-limit-error
                          :status-code 429
                          :message "rate limited")
-                (cl-llm-provider::wait-and-retry () nil)
-                (cl-llm-provider::retry () nil)
-                (cl-llm-provider::use-fallback-provider (p)
+                (wait-and-retry () nil)
+                (retry () nil)
+                (use-fallback-provider (p)
                   :report "Use fallback"
                   p)))))
       (fiveam:is (eq fallback-provider result)))))
@@ -463,11 +468,11 @@
             (setf restarts-found
                   (mapcar #'restart-name (compute-restarts e)))
             ;; Must invoke a restart to avoid unwinding
-            (invoke-restart (find-restart 'cl-llm-provider::retry e)))))
+            (invoke-restart (find-restart 'retry e)))))
       (handle-http-error 429 "rate limited" (make-provider :ollama :model "test")))
-    (fiveam:is (member 'cl-llm-provider::wait-and-retry restarts-found))
-    (fiveam:is (member 'cl-llm-provider::retry restarts-found))
-    (fiveam:is (member 'cl-llm-provider::use-fallback-provider restarts-found))))
+    (fiveam:is (member 'wait-and-retry restarts-found))
+    (fiveam:is (member 'retry restarts-found))
+    (fiveam:is (member 'use-fallback-provider restarts-found))))
 
 (fiveam:test restart-handle-http-error-401
   "handle-http-error establishes use-value restart for 401"
@@ -489,10 +494,10 @@
           (lambda (e)
             (setf restarts-found
                   (mapcar #'restart-name (compute-restarts e)))
-            (invoke-restart (find-restart 'cl-llm-provider::retry e)))))
+            (invoke-restart (find-restart 'retry e)))))
       (handle-http-error 500 "internal error" (make-provider :ollama :model "test")))
-    (fiveam:is (member 'cl-llm-provider::retry restarts-found))
-    (fiveam:is (member 'cl-llm-provider::use-fallback-provider restarts-found))))
+    (fiveam:is (member 'retry restarts-found))
+    (fiveam:is (member 'use-fallback-provider restarts-found))))
 
 ;;; 4.3 tools.lisp restarts: skip-validation, use-value
 
@@ -504,7 +509,7 @@
         ((tool-schema-error
           (lambda (e)
             (declare (ignore e))
-            (invoke-restart (find-restart 'cl-llm-provider::skip-validation)))))
+            (invoke-restart (find-restart 'skip-validation)))))
       (validate-tool-definition tool))
     (fiveam:is-true t "skip-validation restart allowed continuing past invalid tool")))
 
@@ -528,11 +533,11 @@
         ((tool-schema-error
           (lambda (e)
             (declare (ignore e))
-            (let ((r (find-restart 'cl-llm-provider::skip-invalid-tool)))
+            (let ((r (find-restart 'skip-invalid-tool)))
               (if r
                   (invoke-restart r)
                   ;; If skip-invalid-tool not available, try skip-validation
-                  (invoke-restart (find-restart 'cl-llm-provider::skip-validation)))))))
+                  (invoke-restart (find-restart 'skip-validation)))))))
       (validate-tools (list good-tool bad-tool)))
     (fiveam:is-true t "skip-invalid-tool allowed continuing past bad tool")))
 
@@ -545,16 +550,16 @@
               ((stream-interrupted-error
                 (lambda (e)
                   (declare (ignore e))
-                  (invoke-restart (find-restart 'cl-llm-provider::return-partial-content)))))
+                  (invoke-restart (find-restart 'return-partial-content)))))
             (restart-case
                 (error 'stream-interrupted-error
                        :chunks-received 3
                        :accumulated-content "partial"
                        :message "stream died")
-              (cl-llm-provider::return-partial-content ()
+              (return-partial-content ()
                 :report "Return partial"
                 nil)
-              (cl-llm-provider::abort-stream ()
+              (abort-stream ()
                 :report "Abort"
                 :aborted)))))
     (fiveam:is (null result))))
@@ -566,16 +571,16 @@
               ((stream-interrupted-error
                 (lambda (e)
                   (declare (ignore e))
-                  (invoke-restart (find-restart 'cl-llm-provider::abort-stream)))))
+                  (invoke-restart (find-restart 'abort-stream)))))
             (restart-case
                 (error 'stream-interrupted-error
                        :chunks-received 3
                        :accumulated-content "partial"
                        :message "stream died")
-              (cl-llm-provider::return-partial-content ()
+              (return-partial-content ()
                 :report "Return partial"
                 nil)
-              (cl-llm-provider::abort-stream ()
+              (abort-stream ()
                 :report "Abort"
                 :aborted)))))
     (fiveam:is (eq :aborted result))))
@@ -687,7 +692,7 @@
           (lambda (e)
             (setf options (available-recovery-options e))
             ;; Must handle to prevent unwind
-            (invoke-restart (find-restart 'cl-llm-provider::retry e)))))
+            (invoke-restart (find-restart 'retry e)))))
       (handle-http-error 429 "rate limited" (make-provider :ollama :model "test")))
     (fiveam:is (listp options))
     (fiveam:is (> (length options) 0))

@@ -97,7 +97,7 @@ Callers should treat context as read-only after execute-tool returns."))
           :interactive (lambda ()
                          (format t "Enter handler function: ")
                          (list (eval (read))))
-          (setf (slot-value tool 'cl-llm-provider::handler) fn))))
+          (setf (tool-handler tool) fn))))
 
     ;; Step 1: Safety check
     (when max-safety-level

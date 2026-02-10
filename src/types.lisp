@@ -5,12 +5,14 @@
 (defclass llm-provider ()
   ((api-key :initarg :api-key
             :initform nil
-            :reader provider-api-key
-            :documentation "API key for authentication.")
+            :accessor provider-api-key
+            :documentation "API key for authentication.
+Mutable: set during make-provider from env vars, and via USE-VALUE restart.")
    (base-url :initarg :base-url
              :initform nil
-             :reader provider-base-url
-             :documentation "Base URL for API requests.")
+             :accessor provider-base-url
+             :documentation "Base URL for API requests.
+Mutable: set during make-provider from provider-default-base-url.")
    (default-model :initarg :model
                   :initform nil
                   :accessor provider-default-model
@@ -80,7 +82,7 @@
         :documentation "Original provider response for debugging/advanced use.")
    (performance :initarg :performance
                 :initform nil
-                :reader response-performance
+                :accessor response-performance
                 :documentation "Performance timing plist (:encode-time N :api-time M :decode-time K) when *performance-profiling* is enabled.")
    (metadata :initarg :metadata
              :initform nil
@@ -152,8 +154,9 @@
            :documentation "List of received chunks (for accumulation).")
    (accumulated-buffer :initform (make-array 0 :element-type 'character
                                                :adjustable t :fill-pointer 0)
-                       :reader stream-accumulated-buffer
-                       :documentation "Adjustable string buffer for O(1) amortized content accumulation.")
+                       :accessor stream-accumulated-buffer
+                       :documentation "Adjustable string buffer for O(1) amortized content accumulation.
+Mutated internally via vector-push-extend in buffer-append.")
    (http-stream :initarg :http-stream
                 :initform nil
                 :accessor stream-http-stream
@@ -201,7 +204,7 @@
         :documentation "Original provider response.")
    (performance :initarg :performance
                 :initform nil
-                :reader response-performance
+                :accessor response-performance
                 :documentation "Performance timing plist (:encode-time N :api-time M :decode-time K) when *performance-profiling* is enabled.")
    (metadata :initarg :metadata
              :initform nil

@@ -31,7 +31,10 @@
    (error-condition :initform nil
                     :accessor context-error
                     :documentation "Error condition if execution failed."))
-  (:documentation "Context object tracking tool execution state."))
+  (:documentation "Context object tracking tool execution state.
+Mutable: approval-status, edited-arguments, and arguments are updated during
+the approval phase. result and error-condition are set after handler execution.
+Callers should treat context as read-only after execute-tool returns."))
 
 (defmethod print-object ((ctx tool-execution-context) stream)
   (print-unreadable-object (ctx stream :type t)
@@ -134,6 +137,8 @@
     (setf (context-start-time context) (get-internal-real-time))
 
     ;; Step 5: Execute handler
+    ;; Note: We intentionally catch all errors here to ensure lifecycle hooks
+    ;; (:on-error) always fire. The error is re-signaled after hooks run.
     (handler-case
         (let ((result (funcall (tool-handler tool) arguments)))
           ;; Record end time
@@ -210,7 +215,11 @@
               (error "Tool ~S not found in registry" tool-name))
              (otherwise
               (if (functionp on-missing-tool)
-                  (push (cons call (funcall on-missing-tool tool-name call)) results)
+                  (handler-case
+                      (let ((result (funcall on-missing-tool tool-name call)))
+                        (push (cons call result) results))
+                    (error (e)
+                      (push (cons call e) results)))
                   (error "Tool ~S not found in registry" tool-name))))))))
     (nreverse results)))
 

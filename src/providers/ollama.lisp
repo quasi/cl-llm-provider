@@ -125,7 +125,11 @@
                                                    :name (gethash "name" function)
                                                    :arguments (let ((args-str (gethash "arguments" function)))
                                                                (if (stringp args-str)
-                                                                   (yason:parse args-str)
+                                                                   (handler-case (yason:parse args-str)
+                                                                     (error (e)
+                                                                       (warn "Failed to parse tool arguments for ~A: ~A"
+                                                                             (gethash "name" function) e)
+                                                                       (make-hash-table :test 'equal)))
                                                                    args-str))))))
          (finish-reason (or (gethash "done_reason" raw-response) "stop")))
 

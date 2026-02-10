@@ -22,7 +22,11 @@ OpenAI adds ~4 tokens per message for role/formatting.")
 TEXT - String to estimate tokens for
 
 Returns estimated token count (integer).
-Uses character-based estimation as a portable fallback."
+Uses character-based estimation as a portable fallback.
+
+Note: Optimized for English/Latin text (~4 chars/token). Non-ASCII text
+(CJK, Arabic, etc.) typically has different token density and this estimate
+may be less accurate. Use for planning/budgeting, not precise accounting."
   (if (or (null text) (string= text ""))
       0
       (ceiling (length text) *chars-per-token-estimate*)))

@@ -164,32 +164,37 @@ Returns:
         (provider (stream-provider stream))
         (index (length (stream-chunks stream))))
     (declare (ignore provider))
-    (handler-case
-        (loop
-          (let ((line (read-line http-stream nil :eof)))
-            (when (eq line :eof)
-              (setf (stream-state stream) :closed)
-              (return nil))
+    (unwind-protect
+         (handler-case
+             (loop
+               (let ((line (read-line http-stream nil :eof)))
+                 (when (eq line :eof)
+                   (setf (stream-state stream) :closed)
+                   (return nil))
 
-            (let ((parsed (parse-sse-line line)))
-              (when (and parsed (eq (car parsed) :data))
-                (let ((chunk (parse-openai-stream-data (cdr parsed) index)))
-                  (cond
-                    ((eq chunk :done)
-                     (setf (stream-state stream) :closed)
-                     (close http-stream)
-                     (return nil))
-                    (chunk
-                     ;; Accumulate content into buffer (amortized O(1))
-                     (buffer-append (stream-accumulated-buffer stream)
-                                    (chunk-delta chunk))
-                     (push chunk (stream-chunks stream))
-                     (return chunk))))))))
-      (error (e)
-        (setf (stream-state stream) :error)
-        (setf (stream-error-condition stream) e)
-        (ignore-errors (close http-stream))
-        nil))))
+                 (let ((parsed (parse-sse-line line)))
+                   (when (and parsed (eq (car parsed) :data))
+                     (let ((chunk (parse-openai-stream-data (cdr parsed) index)))
+                       (cond
+                         ((eq chunk :done)
+                          (setf (stream-state stream) :closed)
+                          (return nil))
+                         (chunk
+                          ;; Accumulate content into buffer (amortized O(1))
+                          (let ((delta (chunk-delta chunk)))
+                            (when (and delta (stringp delta))
+                              (buffer-append (stream-accumulated-buffer stream) delta)))
+                          (push chunk (stream-chunks stream))
+                          (return chunk))))))))
+           (error (e)
+             (setf (stream-state stream) :error)
+             (setf (stream-error-condition stream) e)
+             nil))
+      ;; Cleanup: always close HTTP stream when done or on error
+      (when (stream-closed-p stream)
+        (handler-case (close http-stream)
+          (error (e)
+            (warn "Failed to close HTTP stream: ~A" e)))))))
 
 (defun read-anthropic-stream-chunk (stream)
   "Read next chunk from Anthropic streaming response."
@@ -199,36 +204,41 @@ Returns:
   (let ((http-stream (stream-http-stream stream))
         (index (length (stream-chunks stream)))
         (current-event nil))
-    (handler-case
-        (loop
-          (let ((line (read-line http-stream nil :eof)))
-            (when (eq line :eof)
-              (setf (stream-state stream) :closed)
-              (return nil))
+    (unwind-protect
+         (handler-case
+             (loop
+               (let ((line (read-line http-stream nil :eof)))
+                 (when (eq line :eof)
+                   (setf (stream-state stream) :closed)
+                   (return nil))
 
-            (let ((parsed (parse-sse-line line)))
-              (cond
-                ;; Event type line
-                ((and parsed (eq (car parsed) :event))
-                 (setf current-event (cdr parsed)))
-
-                ;; Data line with event type
-                ((and parsed (eq (car parsed) :data) current-event)
-                 (let ((chunk (parse-anthropic-stream-event current-event (cdr parsed) index)))
-                   (setf current-event nil)
+                 (let ((parsed (parse-sse-line line)))
                    (cond
-                     ((eq chunk :done)
-                      (setf (stream-state stream) :closed)
-                      (close http-stream)
-                      (return nil))
-                     (chunk
-                      ;; Accumulate content into buffer (amortized O(1))
-                      (buffer-append (stream-accumulated-buffer stream)
-                                     (chunk-delta chunk))
-                      (push chunk (stream-chunks stream))
-                      (return chunk)))))))))
-      (error (e)
-        (setf (stream-state stream) :error)
-        (setf (stream-error-condition stream) e)
-        (ignore-errors (close http-stream))
-        nil))))
+                     ;; Event type line
+                     ((and parsed (eq (car parsed) :event))
+                      (setf current-event (cdr parsed)))
+
+                     ;; Data line with event type
+                     ((and parsed (eq (car parsed) :data) current-event)
+                      (let ((chunk (parse-anthropic-stream-event current-event (cdr parsed) index)))
+                        (setf current-event nil)
+                        (cond
+                          ((eq chunk :done)
+                           (setf (stream-state stream) :closed)
+                           (return nil))
+                          (chunk
+                           ;; Accumulate content into buffer (amortized O(1))
+                           (let ((delta (chunk-delta chunk)))
+                             (when (and delta (stringp delta))
+                               (buffer-append (stream-accumulated-buffer stream) delta)))
+                           (push chunk (stream-chunks stream))
+                           (return chunk)))))))))
+           (error (e)
+             (setf (stream-state stream) :error)
+             (setf (stream-error-condition stream) e)
+             nil))
+      ;; Cleanup: always close HTTP stream when done or on error
+      (when (stream-closed-p stream)
+        (handler-case (close http-stream)
+          (error (e)
+            (warn "Failed to close HTTP stream: ~A" e)))))))

@@ -1,6 +1,14 @@
 ;;; ABOUTME: Parameter validation system with built-in and custom validators
 (in-package :cl-llm-provider.tools)
 
+;;;; Validation Patterns
+
+(defvar *email-pattern* "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+  "Basic email validation regex: localpart@domain.tld")
+
+(defvar *url-pattern* "^https?://"
+  "Basic URL validation regex: http:// or https:// prefix")
+
 ;;;; Built-in Validators
 
 (defvar *built-in-validators*
@@ -10,10 +18,8 @@
    :positive-number (lambda (v) (and (numberp v) (> v 0)))
    :non-negative-number (lambda (v) (and (numberp v) (>= v 0)))
    :non-empty-string (lambda (v) (and (stringp v) (> (length v) 0)))
-   :email (lambda (v) (and (stringp v)
-                           (cl-ppcre:scan "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" v)))
-   :url (lambda (v) (and (stringp v)
-                         (cl-ppcre:scan "^https?://" v)))
+   :email (lambda (v) (and (stringp v) (cl-ppcre:scan *email-pattern* v)))
+   :url (lambda (v) (and (stringp v) (cl-ppcre:scan *url-pattern* v)))
    :boolean (lambda (v) (typep v 'boolean))
    :string (lambda (v) (stringp v))
    :integer (lambda (v) (integerp v))

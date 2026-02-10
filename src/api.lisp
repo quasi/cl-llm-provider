@@ -51,13 +51,13 @@ Example:
     ;; Set base-url from default if not provided
     (unless (provider-base-url provider)
       (when-let ((default-url (provider-default-base-url provider)))
-        (setf (slot-value provider 'base-url) default-url)))
+        (setf (provider-base-url provider) default-url)))
 
     ;; Get API key from environment if not provided (and not Ollama which doesn't need it)
     (when (and (not (typep provider 'ollama-provider))
                (not (provider-api-key provider)))
       (when-let ((env-var (provider-api-key-env-var provider)))
-        (setf (slot-value provider 'api-key)
+        (setf (provider-api-key provider)
               (get-env-or-error env-var
                                 (format nil "API key required for ~A" provider-type)))))
 
@@ -163,7 +163,7 @@ Example:
                                      (parse-completion-response prov raw-response
                                                                :performance nil))))
                         ;; Update response with complete performance stats (including decode time)
-                        (setf (slot-value resp 'performance) (get-performance-stats))
+                        (setf (response-performance resp) (get-performance-stats))
                         resp))
                     ;; No profiling - standard path
                     (let ((raw-response (send-completion-request prov messages
@@ -236,7 +236,7 @@ Example:
                              (parse-embedding-response prov raw-response
                                                       :performance nil))))
             ;; Update response with complete performance stats (including decode time)
-            (setf (slot-value response 'performance) (get-performance-stats))
+            (setf (response-performance response) (get-performance-stats))
             response))
         ;; No profiling - standard path
         (let ((raw-response (send-embedding-request prov input

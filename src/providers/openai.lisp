@@ -110,9 +110,10 @@
                    :message (alexandria:hash-table-plist message)
                    :tool-calls tool-calls
                    :finish-reason (intern (string-upcase finish-reason) :keyword)
-                   :usage (list :prompt-tokens (gethash "prompt_tokens" usage)
-                                :completion-tokens (gethash "completion_tokens" usage)
-                                :total-tokens (gethash "total_tokens" usage))
+                   :usage (when usage
+                            (list :prompt-tokens (or (gethash "prompt_tokens" usage) 0)
+                                  :completion-tokens (or (gethash "completion_tokens" usage) 0)
+                                  :total-tokens (or (gethash "total_tokens" usage) 0)))
                    :raw raw-response
                    :performance performance
                    :metadata (let ((metadata nil))
@@ -126,12 +127,13 @@
                               (when-let ((created (gethash "created" raw-response)))
                                 (setf (getf metadata :created) created))
                               ;; Extract detailed token usage (o1/o3 reasoning, caching, audio)
-                              (when-let ((completion-details (gethash "completion_tokens_details" usage)))
-                                (setf (getf metadata :completion-tokens-details)
-                                      (alexandria:hash-table-plist completion-details)))
-                              (when-let ((prompt-details (gethash "prompt_tokens_details" usage)))
-                                (setf (getf metadata :prompt-tokens-details)
-                                      (alexandria:hash-table-plist prompt-details)))
+                              (when usage
+                                (when-let ((completion-details (gethash "completion_tokens_details" usage)))
+                                  (setf (getf metadata :completion-tokens-details)
+                                        (alexandria:hash-table-plist completion-details)))
+                                (when-let ((prompt-details (gethash "prompt_tokens_details" usage)))
+                                  (setf (getf metadata :prompt-tokens-details)
+                                        (alexandria:hash-table-plist prompt-details))))
                               metadata))))
 
 (defmethod send-embedding-request ((provider openai-provider) input
@@ -189,8 +191,9 @@
     (make-instance 'embedding-response
                    :embeddings embeddings
                    :model (gethash "model" raw-response)
-                   :usage (list :prompt-tokens (gethash "prompt_tokens" usage)
-                                :total-tokens (gethash "total_tokens" usage))
+                   :usage (when usage
+                            (list :prompt-tokens (or (gethash "prompt_tokens" usage) 0)
+                                  :total-tokens (or (gethash "total_tokens" usage) 0)))
                    :raw raw-response
                    :performance performance
                    :metadata (let ((metadata nil))

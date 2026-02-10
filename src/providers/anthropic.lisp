@@ -197,10 +197,12 @@
                      :message message
                      :tool-calls tool-calls
                      :finish-reason (intern (string-upcase finish-reason) :keyword)
-                     :usage (list :prompt-tokens (gethash "input_tokens" usage)
-                                  :completion-tokens (gethash "output_tokens" usage)
-                                  :total-tokens (+ (gethash "input_tokens" usage)
-                                                  (gethash "output_tokens" usage)))
+                     :usage (when usage
+                              (let ((in (or (gethash "input_tokens" usage) 0))
+                                    (out (or (gethash "output_tokens" usage) 0)))
+                                (list :prompt-tokens in
+                                      :completion-tokens out
+                                      :total-tokens (+ in out))))
                      :raw raw-response
                      :performance performance
                      :metadata (let ((metadata nil))

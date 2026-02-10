@@ -5,26 +5,32 @@
 
 (defclass tool-registry ()
   ((tools :initform (make-hash-table :test 'equal)
+          :type hash-table
           :accessor registry-tools
           :documentation "Hash table mapping tool names to tool-definition objects.")
    (name :initarg :name
          :initform "default"
+         :type string
          :reader registry-name
          :documentation "Human-readable registry name.")
    (description :initarg :description
                 :initform nil
+                :type (or string null)
                 :reader registry-description
                 :documentation "Description of this tool registry.")
    (default-safety-level :initarg :default-safety-level
                          :initform :safe
+                         :type keyword
                          :accessor registry-default-safety-level
                          :documentation "Default safety level for tools without explicit level.")
    (approval-callback :initarg :approval-callback
                       :initform nil
+                      :type (or function null)
                       :accessor registry-approval-callback
                       :documentation "Default approval callback for tools requiring approval.")
    (global-hooks :initarg :global-hooks
                  :initform nil
+                 :type list
                  :accessor registry-global-hooks
                  :documentation "Plist of global lifecycle hooks (:on-start fn :on-complete fn :on-error fn)."))
   (:documentation "Central registry for tool definitions with search and filtering capabilities."))

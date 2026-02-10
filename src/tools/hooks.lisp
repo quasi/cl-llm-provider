@@ -94,8 +94,9 @@
     (handler-case
         (apply hook actual-args)
       (error (e)
-        (when on-error-fn
-          (funcall on-error-fn e))
+        (if on-error-fn
+            (funcall on-error-fn e)
+            (warn "Hook error with no handler: ~A" e))
         nil))))
 
 ;;;; Hook Utility Functions
@@ -161,7 +162,13 @@
                                                internal-time-units-per-second))))))
          (remhash call-id start-times)
          (when (and duration-ms on-complete-action)
-           (funcall on-complete-action tool-call duration-ms)))))))
+           (funcall on-complete-action tool-call duration-ms))))
+
+     :on-error
+     (lambda (tool-call arguments condition)
+       (declare (ignore arguments condition))
+       ;; Clean up start-time entry on error to prevent hash-table leak
+       (remhash (tool-call-id tool-call) start-times)))))
 
 (defun combine-hooks (hook-type &rest hooks)
   "Combine multiple hooks of the same type into a single hook.

@@ -4,23 +4,23 @@
 
 (defvar *default-provider* nil
   "Default provider used when :provider argument is omitted from API calls.
-Thread safety: set at startup via CONFIGURE-DEFAULTS, or use WITH-PROVIDER
-for per-thread overrides.")
+Thread safety: Mutate only via CONFIGURE-DEFAULTS (serialized with *CONFIG-LOCK*).
+Use WITH-PROVIDER for per-thread overrides. Do NOT setf directly in multi-threaded code.")
 
 (defvar *default-model* nil
   "Default model used when :model argument is omitted and provider has no default.
-Thread safety: set at startup via CONFIGURE-DEFAULTS, or use WITH-MODEL
-for per-thread overrides.")
+Thread safety: Mutate only via CONFIGURE-DEFAULTS (serialized with *CONFIG-LOCK*).
+Use WITH-MODEL for per-thread overrides. Do NOT setf directly in multi-threaded code.")
 
 (defvar *default-max-tokens* 4096
   "Default max-tokens when not specified.
-Thread safety: set at startup via CONFIGURE-DEFAULTS, or pass :max-tokens
-explicitly for per-thread overrides.")
+Thread safety: Mutate only via CONFIGURE-DEFAULTS (serialized with *CONFIG-LOCK*).
+Pass :max-tokens explicitly for per-request overrides.")
 
 (defvar *default-temperature* 1.0
   "Default temperature when not specified.
-Thread safety: set at startup via CONFIGURE-DEFAULTS, or pass :temperature
-explicitly for per-thread overrides.")
+Thread safety: Mutate only via CONFIGURE-DEFAULTS (serialized with *CONFIG-LOCK*).
+Pass :temperature explicitly for per-request overrides.")
 
 (defvar *config-lock* (bt:make-lock "cl-llm-provider-config")
   "Lock for thread-safe mutation of global configuration defaults.")

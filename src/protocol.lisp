@@ -271,7 +271,11 @@ Default implementation handles OpenAI format."))
                                        :name (gethash "name" function)
                                        :arguments (let ((args-str (gethash "arguments" function)))
                                                    (if (stringp args-str)
-                                                       (yason:parse args-str)
+                                                       (handler-case (yason:parse args-str)
+                                                         (error (e)
+                                                           (warn "Failed to parse tool arguments for ~A: ~A"
+                                                                 (gethash "name" function) e)
+                                                           (make-hash-table :test 'equal)))
                                                        args-str)))))))))
 
 ;;;; Performance Profiling Infrastructure
@@ -428,7 +432,7 @@ PROVIDER - Provider instance"
                :interactive (lambda ()
                               (format t "Enter new API key: ")
                               (list (read-line)))
-               (setf (slot-value provider 'api-key) new-api-key))))
+               (setf (provider-api-key provider) new-api-key))))
 
       (429 (let ((retry-after (parse-retry-after body)))
              (restart-case
@@ -471,9 +475,24 @@ PROVIDER - Provider instance"
 (defun parse-retry-after (body)
   "Extract retry-after value from error response body.
 
-BODY - Response body (hash-table or string)
+BODY - Response body (hash-table, string, or other)
 
-Returns number of seconds to wait, or nil."
-  (when (hash-table-p body)
-    (or (gethash "retry_after" body)
-        (gethash "retry-after" body))))
+Returns number of seconds to wait, or nil.
+Checks top-level keys, nested error objects, and string bodies."
+  (flet ((extract-from-hash (ht)
+           (or (gethash "retry_after" ht)
+               (gethash "retry-after" ht)
+               (gethash "Retry-After" ht)
+               ;; Check nested error object
+               (let ((err (gethash "error" ht)))
+                 (when (hash-table-p err)
+                   (or (gethash "retry_after" err)
+                       (gethash "retry-after" err)))))))
+    (cond
+      ((hash-table-p body)
+       (extract-from-hash body))
+      ;; String body: try parsing as integer (HTTP Retry-After header value)
+      ((stringp body)
+       (handler-case (parse-integer body :junk-allowed t)
+         (error () nil)))
+      (t nil))))

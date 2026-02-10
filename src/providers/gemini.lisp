@@ -115,9 +115,10 @@ Reuses OpenAI request format since Gemini's /v1beta/openai/ endpoint is compatib
                    :message (alexandria:hash-table-plist message)
                    :tool-calls tool-calls
                    :finish-reason (intern (string-upcase finish-reason) :keyword)
-                   :usage (list :prompt-tokens (gethash "prompt_tokens" usage)
-                                :completion-tokens (gethash "completion_tokens" usage)
-                                :total-tokens (gethash "total_tokens" usage))
+                   :usage (when usage
+                            (list :prompt-tokens (or (gethash "prompt_tokens" usage) 0)
+                                  :completion-tokens (or (gethash "completion_tokens" usage) 0)
+                                  :total-tokens (or (gethash "total_tokens" usage) 0)))
                    :raw raw-response
                    :performance performance
                    :metadata (let ((metadata nil))
@@ -188,8 +189,9 @@ Reuses OpenAI request format since Gemini's /v1beta/openai/ endpoint is compatib
     (make-instance 'embedding-response
                    :embeddings embeddings
                    :model (gethash "model" raw-response)
-                   :usage (list :prompt-tokens (gethash "prompt_tokens" usage)
-                                :total-tokens (gethash "total_tokens" usage))
+                   :usage (when usage
+                            (list :prompt-tokens (or (gethash "prompt_tokens" usage) 0)
+                                  :total-tokens (or (gethash "total_tokens" usage) 0)))
                    :raw raw-response
                    :performance performance
                    :metadata (let ((metadata nil))

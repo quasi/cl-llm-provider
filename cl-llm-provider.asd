@@ -93,7 +93,8 @@
                  (:file "test-tokenizer" :depends-on ("test-harness"))
                  (:file "test-tools-enhanced" :depends-on ("test-harness"))
                  (:file "test-tools-integration" :depends-on ("test-harness"))
-                 (:file "test-tools-support" :depends-on ("test-harness")))))
+                 (:file "test-tools-support" :depends-on ("test-harness"))
+                 (:file "test-conditions-restarts" :depends-on ("test-harness")))))
   :perform (test-op (o c)
              (symbol-call :fiveam :run!
                           (find-symbol* :cl-llm-provider-suite :cl-llm-provider/test))))

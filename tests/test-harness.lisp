@@ -46,5 +46,6 @@
          "src/providers/openrouter.lisp"
          "src/providers/openai-compatible.lisp"
          "src/providers/gemini.lisp"
-         "src/api.lisp")
+         "src/api.lisp"
+         "src/recovery.lisp")
   :package :cl-llm-provider)

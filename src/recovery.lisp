@@ -70,7 +70,7 @@ Returns seconds to wait. Adds jitter (0.5x-1.5x) to avoid thundering herd."
   (:feature error-recovery)
   (:purpose "Exponential backoff with jitter for retry timing")
   (let ((base (expt 2 (1- attempt))))
-    (* base (+ 0.5 (random 1.0)))))
+    (min 60 (* base (+ 0.5 (random 1.0))))))
 
 (defun/i retry-wait-time (condition attempt backoff-base)
   "Compute wait time for retry ATTEMPT, respecting provider hints.
@@ -225,6 +225,11 @@ Example:
   :feature error-recovery
   :purpose "List available restarts as agent-inspectable plists"
   :role "Primary introspection tool for agents to discover recovery options at runtime")
+
+(defintent make-retry-handler
+  :feature error-recovery
+  :purpose "Create reusable handler function for restart-based transient error retry"
+  :role "Lower-level restart-invoking handler; use with-auto-recovery for body re-execution")
 
 (defintent with-auto-recovery
   :feature error-recovery

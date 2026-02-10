@@ -57,7 +57,7 @@
                    (:file "openai-compatible")
                    (:file "gemini")))
                  (:file "api" :depends-on ("package" "types" "conditions" "protocol" "config" "tools" "providers"))
-                (:file "recovery" :depends-on ("package" "features" "conditions" "config")))))
+                 (:file "recovery" :depends-on ("package" "features" "conditions" "config")))))
   :in-order-to ((test-op (test-op "cl-llm-provider/test"))))
 
 (defsystem "cl-llm-provider/test"

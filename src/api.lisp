@@ -364,19 +364,20 @@ Example:
                                           :tool-choice tool-choice
                                           :stop stop)))
 
-      ;; If callbacks provided, start reading in current thread
+      ;; If callbacks provided, start reading in current thread.
+      ;; Use handler-bind (not handler-case) to preserve restart stack from
+      ;; read-stream-chunk errors (e.g. stream-interrupted-error restarts).
       (when (or on-chunk on-complete on-error)
-        (handler-case
-            (loop for chunk = (read-stream-chunk stream)
-                  while chunk
-                  do (when on-chunk (funcall on-chunk chunk))
-                  finally (when on-complete
-                            (funcall on-complete
-                                    (stream-accumulated-content stream)
-                                    (car (stream-chunks stream)))))
-          (error (e)
-            (if on-error
-                (funcall on-error e)
-                (error e)))))
+        (handler-bind
+            ((error (lambda (e)
+                      (when on-error
+                        (funcall on-error e)))))
+          (loop for chunk = (read-stream-chunk stream)
+                while chunk
+                do (when on-chunk (funcall on-chunk chunk))
+                finally (when on-complete
+                          (funcall on-complete
+                                   (stream-accumulated-content stream)
+                                   (car (stream-chunks stream)))))))
 
       stream)))

@@ -455,7 +455,8 @@ Returns a condition type symbol and extra initargs plist."
                 (search "context length" body-str)
                 (search "max_tokens" body-str)
                 (search "maximum context" body-str)
-                (search "token" body-str)))
+                (search "token limit" body-str)
+                (search "tokens exceeded" body-str)))
        (values 'provider-context-length-error nil))
 
       ;; 400 with content filter / safety

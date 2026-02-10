@@ -221,6 +221,30 @@
    ;; Error classification
    #:classify-api-error
 
+   ;; Agent recovery helpers
+   #:available-recovery-options
+   #:transient-error-p
+   #:default-backoff
+   #:retry-wait-time
+   #:make-retry-handler
+   #:with-auto-recovery
+
+   ;; Restart names (for handler-bind + invoke-restart by agents)
+   ;; From api.lisp:
+   #:use-provider
+   #:use-model
+   ;; From protocol.lisp (handle-http-error):
+   #:retry
+   #:wait-and-retry
+   #:use-fallback-provider
+   ;; From streaming.lisp:
+   #:return-partial-content
+   #:abort-stream
+   ;; Note: CL:USE-VALUE is already accessible from CL package.
+   ;; Tool validation restarts (skip-validation, skip-invalid-tool) and
+   ;; tool execution restarts (use-handler, use-error-result,
+   ;; retry-execution, skip-tool) are in cl-llm-provider.tools package.
+
    ;; Protocol (for extensibility)
    #:send-completion-request
    #:parse-completion-response

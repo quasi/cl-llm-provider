@@ -290,6 +290,41 @@ Mutated internally via vector-push-extend in buffer-append.")
   (print-unreadable-object (tool stream :type t)
     (format stream "~A" (tool-name tool))))
 
+(defun %json-hash-to-keyword-plist (value)
+  "Recursively convert a yason-parsed hash-table (string keys) to a keyword plist.
+Nested hash-tables become nested plists.  Non-string vectors become lists.
+Strings and other atoms pass through unchanged, so this is safe to call
+on data that might already be a plist.  NIL and empty hash-tables return NIL.
+Inverse of plist-to-hash (protocol.lisp)."
+  (typecase value
+    (hash-table
+     (let (result)
+       ;; TRUST: keys originate from LLM provider JSON responses, not end-user input.
+       ;; Keywords are never GC'd, so this assumes bounded key cardinality.
+       (maphash (lambda (k v)
+                  (let ((keyword (intern (string-upcase
+                                         (substitute #\- #\_ k))
+                                        :keyword)))
+                    (push (%json-hash-to-keyword-plist v) result)
+                    (push keyword result)))
+                value)
+       result))
+    (string value)
+    (vector
+     (map 'list #'%json-hash-to-keyword-plist value))
+    (t value)))
+
+(defun %parse-tool-arguments (args tool-name)
+  "Parse tool ARGS (JSON string or hash-table) into a form suitable for tool-call.
+On JSON parse failure, warns and returns NIL.  The tool-call constructor
+normalizes the result to a keyword plist via initialize-instance :after."
+  (if (stringp args)
+      (handler-case (yason:parse args)
+        (error (e)
+          (warn "Failed to parse tool arguments for ~A: ~A" tool-name e)
+          nil))
+      args))
+
 (defclass tool-call ()
   ((id :initarg :id
        :reader tool-call-id
@@ -301,6 +336,12 @@ Mutated internally via vector-push-extend in buffer-append.")
               :reader tool-call-arguments
               :documentation "Plist of arguments (already parsed from JSON)."))
   (:documentation "Represents a tool invocation requested by the LLM."))
+
+(defmethod initialize-instance :after ((tc tool-call) &key)
+  "Normalize arguments to keyword plist on construction.
+Idempotent: plists pass through unchanged, hash-tables are converted."
+  (with-slots (arguments) tc
+    (setf arguments (%json-hash-to-keyword-plist arguments))))
 
 (defmethod print-object ((call tool-call) stream)
   (print-unreadable-object (call stream :type t)

@@ -126,18 +126,14 @@
          (tool-calls (when tool-calls-raw
                       (loop for tc in (coerce tool-calls-raw 'list)
                             for function = (gethash "function" tc)
+                            for name = (gethash "name" function)
                             collect (make-instance 'tool-call
                                                    :id (or (gethash "id" tc)
                                                           (format nil "call_~A" (random 1000000)))
-                                                   :name (gethash "name" function)
-                                                   :arguments (let ((args-str (gethash "arguments" function)))
-                                                               (if (stringp args-str)
-                                                                   (handler-case (yason:parse args-str)
-                                                                     (error (e)
-                                                                       (warn "Failed to parse tool arguments for ~A: ~A"
-                                                                             (gethash "name" function) e)
-                                                                       (make-hash-table :test 'equal)))
-                                                                   args-str))))))
+                                                   :name name
+                                                   :arguments (%parse-tool-arguments
+                                                               (gethash "arguments" function)
+                                                               name)))))
          (finish-reason (or (gethash "done_reason" raw-response) "stop")))
 
     (make-instance 'completion-response

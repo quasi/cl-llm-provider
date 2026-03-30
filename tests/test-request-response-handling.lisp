@@ -167,11 +167,51 @@
     (fiveam:is (getf (tool-call-arguments call) :a))))
 
 (fiveam:test tool-call-arguments-from-json
-  "Tool call arguments can be parsed from JSON"
+  "JSON-parsed hash-tables are converted to keyword plists by %json-hash-to-keyword-plist"
   (let* ((json-str "{\"a\": 5, \"b\": 3}")
-         (parsed (yason:parse json-str :object-as :hash-table)))
-    (fiveam:is (hash-table-p parsed))
-    (fiveam:is (= (gethash "a" parsed) 5))))
+         (parsed (yason:parse json-str :object-as :hash-table))
+         (plist (cl-llm-provider::%json-hash-to-keyword-plist parsed)))
+    (fiveam:is (listp plist))
+    (fiveam:is (= (getf plist :a) 5))
+    (fiveam:is (= (getf plist :b) 3))))
+
+(fiveam:test json-hash-to-plist-nested-objects
+  "Nested JSON objects become nested keyword plists"
+  (let* ((json-str "{\"config\": {\"max_tokens\": 100, \"enabled\": true}}")
+         (parsed (yason:parse json-str))
+         (plist (cl-llm-provider::%json-hash-to-keyword-plist parsed)))
+    (fiveam:is (listp (getf plist :config)))
+    (fiveam:is (= (getf (getf plist :config) :max-tokens) 100))
+    (fiveam:is (eq (getf (getf plist :config) :enabled) t))))
+
+(fiveam:test json-hash-to-plist-arrays
+  "JSON arrays become CL lists"
+  (let* ((json-str "{\"tags\": [\"alpha\", \"beta\"]}")
+         (parsed (yason:parse json-str))
+         (plist (cl-llm-provider::%json-hash-to-keyword-plist parsed)))
+    (fiveam:is (equal (getf plist :tags) '("alpha" "beta")))))
+
+(fiveam:test json-hash-to-plist-underscore-to-hyphen
+  "JSON underscored keys become hyphenated keywords"
+  (let* ((json-str "{\"user_name\": \"quasi\", \"old_text\": \"foo\"}")
+         (parsed (yason:parse json-str))
+         (plist (cl-llm-provider::%json-hash-to-keyword-plist parsed)))
+    (fiveam:is (string= (getf plist :user-name) "quasi"))
+    (fiveam:is (string= (getf plist :old-text) "foo"))))
+
+(fiveam:test json-hash-to-plist-nil-and-empty
+  "NIL passes through, empty hash becomes NIL"
+  (fiveam:is (null (cl-llm-provider::%json-hash-to-keyword-plist nil)))
+  (fiveam:is (null (cl-llm-provider::%json-hash-to-keyword-plist
+                    (make-hash-table :test 'equal)))))
+
+(fiveam:test json-hash-to-plist-passthrough
+  "Non-hash values pass through unchanged"
+  (fiveam:is (equal '(:a 1 :b 2)
+                    (cl-llm-provider::%json-hash-to-keyword-plist '(:a 1 :b 2))))
+  (fiveam:is (string= "hello"
+                       (cl-llm-provider::%json-hash-to-keyword-plist "hello")))
+  (fiveam:is (= 42 (cl-llm-provider::%json-hash-to-keyword-plist 42))))
 
 ;;;; Response Content Tests
 

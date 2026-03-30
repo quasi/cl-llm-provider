@@ -268,17 +268,13 @@ Default implementation handles OpenAI format."))
                 for tc-type = (gethash "type" tc)
                 for function = (gethash "function" tc)
                 when (string= tc-type "function")
-                collect (make-instance 'tool-call
-                                       :id tc-id
-                                       :name (gethash "name" function)
-                                       :arguments (let ((args-str (gethash "arguments" function)))
-                                                   (if (stringp args-str)
-                                                       (handler-case (yason:parse args-str)
-                                                         (error (e)
-                                                           (warn "Failed to parse tool arguments for ~A: ~A"
-                                                                 (gethash "name" function) e)
-                                                           (make-hash-table :test 'equal)))
-                                                       args-str)))))))))
+                collect (let ((name (gethash "name" function)))
+                          (make-instance 'tool-call
+                                         :id tc-id
+                                         :name name
+                                         :arguments (%parse-tool-arguments
+                                                     (gethash "arguments" function)
+                                                     name)))))))))
 
 ;;;; Performance Profiling Infrastructure
 

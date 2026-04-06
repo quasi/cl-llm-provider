@@ -119,7 +119,7 @@ Reuses OpenAI request format since Gemini's /v1beta/openai/ endpoint is compatib
                    :id (gethash "id" raw-response)
                    :model (gethash "model" raw-response)
                    :content content
-                   :message (alexandria:hash-table-plist message)
+                   :message (%json-hash-to-keyword-plist message)
                    :tool-calls tool-calls
                    :finish-reason (intern (string-upcase finish-reason) :keyword)
                    :usage (when usage

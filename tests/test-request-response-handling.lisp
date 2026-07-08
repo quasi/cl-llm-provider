@@ -213,6 +213,96 @@
                        (cl-llm-provider::%json-hash-to-keyword-plist "hello")))
   (fiveam:is (= 42 (cl-llm-provider::%json-hash-to-keyword-plist 42))))
 
+;;;; Provider Message Keyword-Key Normalization (regression: string-key bug)
+;;;;
+;;;; alexandria:hash-table-plist produces STRING keys ("role", "content") but
+;;;; every consumer reads the message with keyword getf (:role, :content),
+;;;; silently getting NIL.  These tests feed a yason-style string-keyed
+;;;; raw-response through each provider's REAL parse-completion-response and
+;;;; assert the :message slot has keyword keys.  The earlier mock tests built
+;;;; completion-response directly from keyword plists, so they never exercised
+;;;; this conversion boundary -- the mock/real divergence that hid the bug.
+
+(defun %string-keyed-chat-response (message-hash)
+  "Build a yason-style (string-keyed, :test 'equal) chat.completion raw response
+whose single choice carries MESSAGE-HASH."
+  (let ((choice (alexandria:plist-hash-table
+                 (list "index" 0
+                       "message" message-hash
+                       "finish_reason" "stop")
+                 :test 'equal))
+        (usage (alexandria:plist-hash-table
+                '("prompt_tokens" 10 "completion_tokens" 20 "total_tokens" 30)
+                :test 'equal)))
+    (alexandria:plist-hash-table
+     (list "id" "chatcmpl-test"
+           "object" "chat.completion"
+           "created" 1234567890
+           "model" "test-model"
+           "choices" (vector choice)
+           "usage" usage)
+     :test 'equal)))
+
+(defun %plain-assistant-message ()
+  (alexandria:plist-hash-table
+   '("role" "assistant" "content" "Hello there")
+   :test 'equal))
+
+(defun %tool-call-message ()
+  "Assistant message that requests a tool call (content null, tool_calls present)."
+  (let ((function (alexandria:plist-hash-table
+                   '("name" "get_weather" "arguments" "{\"city\": \"Pune\"}")
+                   :test 'equal)))
+    (alexandria:plist-hash-table
+     (list "role" "assistant"
+           "content" nil
+           "tool_calls" (vector (alexandria:plist-hash-table
+                                  (list "id" "call-1"
+                                        "type" "function"
+                                        "function" function)
+                                  :test 'equal)))
+     :test 'equal)))
+
+(defmacro %def-message-keyword-key-tests (name-prefix provider-form)
+  "Emit a plain-text and a tool-call parse test asserting keyword message keys."
+  `(progn
+     (fiveam:test ,(intern (format nil "~A-MESSAGE-HAS-KEYWORD-KEYS" name-prefix))
+       "Parsed assistant message plist uses keyword keys (:role/:content), not strings"
+       (let* ((provider ,provider-form)
+              (raw (%string-keyed-chat-response (%plain-assistant-message)))
+              (msg (response-message (parse-completion-response provider raw))))
+         ;; keyword getf must find the values -> proves keyword keys
+         (fiveam:is (string= "assistant" (getf msg :role)))
+         (fiveam:is (string= "Hello there" (getf msg :content)))
+         ;; and no leftover string keys
+         (fiveam:is (null (getf msg "role")))))
+     (fiveam:test ,(intern (format nil "~A-TOOL-CALL-MESSAGE-HAS-KEYWORD-KEYS" name-prefix))
+       "Parsed tool-call assistant message uses keyword keys down to :tool-calls"
+       (let* ((provider ,provider-form)
+              (raw (%string-keyed-chat-response (%tool-call-message)))
+              (msg (response-message (parse-completion-response provider raw))))
+         (fiveam:is (string= "assistant" (getf msg :role)))
+         (fiveam:is (null (getf msg :content)))
+         ;; tool_calls array key normalized to keyword, nested plists too
+         (fiveam:is (getf msg :tool-calls))
+         (let ((tc (first (getf msg :tool-calls))))
+           (fiveam:is (string= "call-1" (getf tc :id)))
+           (fiveam:is (string= "get_weather"
+                               (getf (getf tc :function) :name))))))))
+
+(%def-message-keyword-key-tests "OPENAI"
+  (make-provider :openai :api-key "test-key"))
+
+(%def-message-keyword-key-tests "GEMINI"
+  (make-provider :gemini :api-key "test-key"))
+
+(%def-message-keyword-key-tests "OPENROUTER"
+  (make-provider :openrouter :api-key "test-key"))
+
+(%def-message-keyword-key-tests "OPENAI-COMPATIBLE"
+  (make-provider :openai-compatible :api-key "test-key"
+                 :base-url "https://example.test/v1"))
+
 ;;;; Response Content Tests
 
 (fiveam:test completion-response-content-string

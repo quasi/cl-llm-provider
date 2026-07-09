@@ -33,12 +33,16 @@ Returns:
     ((and (>= (length line) 6)
           (string= "event:" (subseq line 0 6)))
      (cons :event (string-trim '(#\Space) (subseq line 6))))
-    ;; Other field (id, retry, etc.)
+    ;; Other fields: only SSE-standard ones; never intern wire data.
     (t
      (let ((colon-pos (position #\: line)))
        (when colon-pos
-         (cons (intern (string-upcase (subseq line 0 colon-pos)) :keyword)
-               (string-trim '(#\Space) (subseq line (1+ colon-pos)))))))))
+         (let ((field (subseq line 0 colon-pos))
+               (value (string-trim '(#\Space) (subseq line (1+ colon-pos)))))
+           (cond
+             ((string-equal field "id") (cons :id value))
+             ((string-equal field "retry") (cons :retry value))
+             (t nil))))))))
 
 (defun/i parse-openai-stream-data (data index)
   "Parse OpenAI streaming data payload.
@@ -66,6 +70,7 @@ Returns:
                            (elt choices 0)))
             (delta (when first-choice (gethash "delta" first-choice)))
             (content (when delta (gethash "content" delta)))
+            (tool-call-deltas (when delta (gethash "tool_calls" delta)))
             (finish-reason (when first-choice
                             (gethash "finish_reason" first-choice)))
             (usage (gethash "usage" json)))
@@ -75,6 +80,8 @@ Returns:
                       :finish-reason (when finish-reason
                                       (intern (string-upcase finish-reason) :keyword))
                       :index index
+                      :tool-call-delta (when tool-call-deltas
+                                         (%json-hash-to-keyword-plist tool-call-deltas))
                       :usage (when usage
                               (list :prompt-tokens (gethash "prompt_tokens" usage)
                                     :completion-tokens (gethash "completion_tokens" usage)
@@ -114,12 +121,37 @@ Returns:
        (let* ((delta (gethash "delta" json))
               (delta-type (gethash "type" delta))
               (text (when (string= delta-type "text_delta")
-                     (gethash "text" delta))))
-         (when text
+                     (gethash "text" delta)))
+              (json-fragment (when (string= delta-type "input_json_delta")
+                               (gethash "partial_json" delta))))
+         (cond
+           (text
+            (make-instance 'stream-chunk
+                           :delta text
+                           :content text
+                           :index index))
+           (json-fragment
+            (make-instance 'stream-chunk
+                           :delta ""
+                           :content ""
+                           :index index
+                           :tool-call-delta
+                           (list (list :index (gethash "index" json)
+                                       :function (list :arguments json-fragment))))))))
+
+      ;; Tool-use block opening: carries id and name.
+      ((string= event-type "content_block_start")
+       (let ((block (gethash "content_block" json)))
+         (when (and block (string= (gethash "type" block) "tool_use"))
            (make-instance 'stream-chunk
-                          :delta text
-                          :content text
-                          :index index))))
+                          :delta ""
+                          :content ""
+                          :index index
+                          :tool-call-delta
+                          (list (list :index (gethash "index" json)
+                                      :id (gethash "id" block)
+                                      :function (list :name (gethash "name" block)
+                                                      :arguments "")))))))
 
       ;; Message delta - contains usage info
       ((string= event-type "message_delta")
@@ -152,21 +184,61 @@ Returns:
   (loop for ch across string do (vector-push-extend ch buffer))
   buffer)
 
+(defun %accumulate-tool-call-delta (stream chunk)
+  "Fold CHUNK's tool-call deltas into STREAM's per-index accumulator."
+  (dolist (part (chunk-tool-call-delta chunk))
+    (let* ((idx (or (getf part :index) 0))
+           (entry (or (gethash idx (stream-tool-call-parts stream))
+                      (list :id nil
+                            :name nil
+                            :arguments (make-array 0 :element-type 'character
+                                                     :adjustable t
+                                                     :fill-pointer 0))))
+           (fn (getf part :function)))
+      (when (getf part :id)
+        (setf (getf entry :id) (getf part :id)))
+      (when (getf fn :name)
+        (setf (getf entry :name) (getf fn :name)))
+      (when (getf fn :arguments)
+        (buffer-append (getf entry :arguments) (getf fn :arguments)))
+      (setf (gethash idx (stream-tool-call-parts stream)) entry))))
+
+(defun stream-tool-calls (stream)
+  "Assemble accumulated streaming tool-call deltas into tool-call objects."
+  (let ((parts '()))
+    (maphash (lambda (idx entry)
+               (push (cons idx entry) parts))
+             (stream-tool-call-parts stream))
+    (loop for (nil . entry) in (sort parts #'< :key #'car)
+          collect (make-instance 'tool-call
+                                 :id (getf entry :id)
+                                 :name (getf entry :name)
+                                 :arguments (%parse-tool-arguments
+                                             (copy-seq (getf entry :arguments))
+                                             (getf entry :name))))))
+
 ;;;; Stream Reading
 
-(defmethod read-stream-chunk :around ((stream completion-stream) &key timeout)
-  "Dispatch to provider-specific stream reader."
-  (declare (ignore timeout))
-  (let ((provider (stream-provider stream)))
-    (if (typep provider 'anthropic-provider)
-        (read-anthropic-stream-chunk stream)
-        (call-next-method))))
+(defgeneric %read-provider-chunk (provider stream)
+  (:documentation "Provider-specific stream reader; specialize for new SSE dialects."))
+
+(defmethod %read-provider-chunk ((provider llm-provider) stream)
+  (declare (ignore provider))
+  (%read-openai-format-chunk stream))
+
+(defmethod %read-provider-chunk ((provider anthropic-provider) stream)
+  (declare (ignore provider))
+  (read-anthropic-stream-chunk stream))
 
 (defmethod read-stream-chunk ((stream completion-stream) &key timeout)
+  "Read next chunk from completion-stream. TIMEOUT is accepted but not implemented."
+  (declare (ignore timeout))
+  (%read-provider-chunk (stream-provider stream) stream))
+
+(defun %read-openai-format-chunk (stream)
   "Read next chunk from completion-stream (OpenAI-compatible format)."
-  (declare (ignore timeout))  ; TODO: implement timeout
   (when (stream-closed-p stream)
-    (return-from read-stream-chunk nil))
+    (return-from %read-openai-format-chunk nil))
 
   (let ((http-stream (stream-http-stream stream))
         (provider (stream-provider stream))
@@ -192,6 +264,8 @@ Returns:
                           (let ((delta (chunk-delta chunk)))
                             (when (and delta (stringp delta))
                               (buffer-append (stream-accumulated-buffer stream) delta)))
+                          (when (chunk-tool-call-delta chunk)
+                            (%accumulate-tool-call-delta stream chunk))
                           (push chunk (stream-chunks stream))
                           (return chunk))))))))
            (error (e)
@@ -253,6 +327,8 @@ Returns:
                            (let ((delta (chunk-delta chunk)))
                              (when (and delta (stringp delta))
                                (buffer-append (stream-accumulated-buffer stream) delta)))
+                           (when (chunk-tool-call-delta chunk)
+                             (%accumulate-tool-call-delta stream chunk))
                            (push chunk (stream-chunks stream))
                            (return chunk)))))))))
            (error (e)

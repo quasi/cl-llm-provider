@@ -76,7 +76,8 @@ Errors in hooks are caught and logged, not propagated."
           (apply hook args)
         (error (e)
           ;; Log but don't propagate hook errors
-          (warn "Observability hook error: ~A" e))))))
+          (warn 'llm-provider-warning
+                :message (format nil "Observability hook error: ~A" e)))))))
 
 ;;; Global hooks variable
 (defvar *global-hooks* nil
@@ -96,6 +97,7 @@ Set with (setf *global-hooks* (make-hooks)) and add hooks.")
 
 STREAM - Output stream for logging (default: *standard-output*)
 LEVEL - Log level (:debug, :info, :warn)
+:warn currently behaves identically to :info.
 
 Returns a hooks structure with logging callbacks.
 

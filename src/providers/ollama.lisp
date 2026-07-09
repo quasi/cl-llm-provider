@@ -20,9 +20,17 @@
 (defmethod provider-capabilities ((provider ollama-provider))
   '(:tools t
     :embeddings t
-    :streaming t
+    :streaming nil  ; no send-streaming-request implemented yet (NDJSON /api/chat)
     :vision nil  ; Model-dependent, conservative default
     :function-calling t))
+
+(defvar *ollama-tool-call-counter* 0)
+(defvar *ollama-tool-call-lock* (bt:make-lock "ollama-tool-call-ids")
+  "Serializes tool-call id generation; Ollama responses carry no ids of their own.")
+
+(defun %next-ollama-tool-call-id ()
+  (bt:with-lock-held (*ollama-tool-call-lock*)
+    (format nil "call_~D" (incf *ollama-tool-call-counter*))))
 
 (defmethod send-completion-request ((provider ollama-provider) messages
                                     &key model max-tokens temperature
@@ -43,10 +51,12 @@
 
         ;; Add system message if provided
         (setf (gethash "messages" body)
-              (if system
-                  (cons (plist-to-hash (list :role "system" :content system))
-                        (mapcar #'plist-to-hash messages))
-                  (mapcar #'plist-to-hash messages)))
+              (let ((all (if system
+                             (cons (list :role "system" :content system) messages)
+                             messages)))
+                (map 'vector
+                     (lambda (m) (translate-message-to-provider provider m))
+                     all)))
 
         ;; Ollama uses options hash for parameters
         (when max-tokens
@@ -83,31 +93,8 @@
                 (yason:encode body s)))))
 
     ;; Make HTTP request (with timing)
-    ;; Use longer timeout for reasoning models with thinking enabled (default 120s)
-    (multiple-value-bind (response-body status-code)
-        (with-performance-timing (:api-time)
-          (handler-case
-              (dex:post url
-                        :headers headers
-                        :content encoded-body
-                        :force-string t
-                        :read-timeout (getf (provider-options provider) :timeout 120))
-            (dex:http-request-failed (e)
-              (values (dex:response-body e) (dex:response-status e)))
-            (error (e)
-              (error 'provider-network-error
-                     :provider provider
-                     :url url
-                     :operation :completion
-                     :original-error e
-                     :message (format nil "Network error: ~A" e)))))
-
-      (if (and (>= status-code 200) (< status-code 300))
-          (yason:parse response-body)
-          (handle-http-error status-code
-                            (handler-case (yason:parse response-body)
-                              (error () response-body))
-                            provider)))))
+    (with-performance-timing (:api-time)
+      (provider-http-post provider url headers encoded-body :operation :completion))))
 
 (defmethod parse-completion-response ((provider ollama-provider) raw-response
                                       &key performance)
@@ -115,7 +102,7 @@
          ;; guard: message may be NIL
          (content (when message (gethash "content" message)))
          (thinking (when message (gethash "thinking" message)))  ; Reasoning trace for models like DeepSeek-R1
-         (role (when message (gethash "role" message)))
+         (role (or (when message (gethash "role" message)) "assistant"))
          ;; Combine thinking and content if both present
          (full-content (cond
                          ((and thinking content)
@@ -130,7 +117,7 @@
                             for name = (gethash "name" function)
                             collect (make-instance 'tool-call
                                                    :id (or (gethash "id" tc)
-                                                          (format nil "call_~A" (random 1000000)))
+                                                          (%next-ollama-tool-call-id))
                                                    :name name
                                                    :arguments (%parse-tool-arguments
                                                                (gethash "arguments" function)
@@ -172,18 +159,24 @@
 
 (defmethod send-embedding-request ((provider ollama-provider) input
                                    &key model dimensions)
-  (declare (ignore dimensions))  ; Ollama doesn't support dimensions parameter
-
-  (let* ((url (format nil "~A/api/embeddings" (provider-base-url provider)))
+  (let* ((url (format nil "~A/api/embed" (provider-base-url provider)))
          (headers (list (cons "Content-Type" "application/json")))
          (encoded-body nil))
+
+    (when dimensions
+      (warn 'llm-provider-warning
+            :provider provider
+            :message "Ollama does not support the :dimensions parameter; ignoring it"))
 
     ;; Build and encode request body (with timing)
     (with-performance-timing (:encode-time)
       (let ((body (make-hash-table :test 'equal)))
         ;; Build request body
         (setf (gethash "model" body) model)
-        (setf (gethash "prompt" body) input)
+        (setf (gethash "input" body)
+              (etypecase input
+                (string input)
+                (list input)))
 
         ;; Encode to JSON
         (setf encoded-body
@@ -191,38 +184,23 @@
                 (yason:encode body s)))))
 
     ;; Make HTTP request (with timing)
-    (multiple-value-bind (response-body status-code)
-        (with-performance-timing (:api-time)
-          (handler-case
-              (dex:post url
-                        :headers headers
-                        :content encoded-body
-                        :force-string t
-                        :read-timeout (getf (provider-options provider) :timeout 120))
-            (dex:http-request-failed (e)
-              (values (dex:response-body e) (dex:response-status e)))
-            (error (e)
-              (error 'provider-network-error
-                     :provider provider
-                     :url url
-                     :operation :embedding
-                     :original-error e
-                     :message (format nil "Network error: ~A" e)))))
-
-      (if (and (>= status-code 200) (< status-code 300))
-          (yason:parse response-body)
-          (handle-http-error status-code
-                            (handler-case (yason:parse response-body)
-                              (error () response-body))
-                            provider)))))
+    (with-performance-timing (:api-time)
+      (provider-http-post provider url headers encoded-body :operation :embedding))))
 
 (defmethod parse-embedding-response ((provider ollama-provider) raw-response
                                      &key performance)
-  (let ((embedding (gethash "embedding" raw-response)))
+  (let ((embeddings (or (gethash "embeddings" raw-response)
+                        (when-let ((embedding (gethash "embedding" raw-response)))
+                          (vector embedding)))))
     (make-instance 'embedding-response
-                   :embeddings (list (coerce embedding 'list))
+                   :embeddings (map 'list (lambda (embedding)
+                                            (coerce embedding 'list))
+                                    (or embeddings #()))
                    :model (or (gethash "model" raw-response) "unknown")
-                   :usage (list :prompt-tokens 0 :total-tokens 0)
+                   :usage (list :prompt-tokens
+                                (or (gethash "prompt_eval_count" raw-response) 0)
+                                :total-tokens
+                                (or (gethash "prompt_eval_count" raw-response) 0))
                    :raw raw-response
                    :performance performance
                    :metadata (let ((metadata nil))

@@ -46,17 +46,13 @@
   (:purpose "Signal HTTP-level API failures with status code and body")
   (:documentation "Signaled when an API request fails.")
   (:report (lambda (c s)
-             (let ((provider-type (when (error-provider c)
-                                   (type-of (error-provider c)))))
-               (format s "~&━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%")
-               (format s "~A API Error~%"
-                       (cond
-                         ((equal provider-type 'anthropic-provider) "Anthropic")
-                         ((equal provider-type 'openai-provider) "OpenAI")
-                         ((equal provider-type 'ollama-provider) "Ollama")
-                         ((equal provider-type 'openrouter-provider) "OpenRouter")
-                         ((equal provider-type 'openai-compatible-provider) "OpenAI-Compatible")
-                         (t "Provider")))
+             (format s "~&━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%")
+             (format s "~A API Error~%"
+                     (let ((provider (error-provider c)))
+                       (if provider
+                           (handler-case (provider-name provider)
+                             (error () "Provider"))
+                           "Provider")))
                (format s "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%")
                (format s "Status: ~A ~A~%"
                        (error-status-code c)
@@ -72,7 +68,7 @@
                          (t "")))
                (when (error-message c)
                  (format s "~%~A~%" (error-message c)))
-               (format s "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%")))))
+               (format s "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%"))))
 
 (define-condition/i provider-rate-limit-error (provider-api-error)
   ((retry-after :initarg :retry-after
@@ -91,9 +87,8 @@
              (when (error-retry-after c)
                (format s "Retry after: ~A second~:P~%~%" (error-retry-after c)))
              (format s "Available restarts:~%")
-             (format s "  • WAIT-AND-RETRY - Wait and retry automatically~%")
+             (format s "  • WAIT-AND-RETRY - Wait per retry-after hint, then retry~%")
              (format s "  • RETRY - Retry immediately~%")
-             (format s "  • USE-FALLBACK-PROVIDER - Switch to different provider~%")
              (format s "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%"))))
 
 (define-condition/i provider-authentication-error (provider-api-error)
@@ -134,6 +129,19 @@
                        (ignore-errors (tool-name (error-tool c))))
                      (or (error-reason c)
                          (error-message c))))))
+
+(define-condition/i tool-registration-error (llm-provider-error)
+  ((tool-name :initarg :tool-name
+              :initform nil
+              :reader error-tool-name
+              :documentation "Name of the tool being registered."))
+  (:feature tool-calling)
+  (:purpose "Signal tool registry conflicts")
+  (:documentation "Signaled when tool registration fails, such as a duplicate name.")
+  (:report (lambda (c s)
+             (format s "Tool registration error~@[ for ~S~]~@[: ~A~]"
+                     (error-tool-name c)
+                     (error-message c)))))
 
 ;;;; Enhanced Tool Conditions
 

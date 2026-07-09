@@ -14,6 +14,8 @@ Keys are model name strings, values are plists with:
   :max-output-tokens - max completion tokens
   :supports-tools - boolean
   :supports-vision - boolean
+  :supports-audio - boolean
+  :output-dimensions - embedding vector dimensions
   :input-cost-per-1m-tokens - USD per 1M input tokens
   :output-cost-per-1m-tokens - USD per 1M output tokens")
 

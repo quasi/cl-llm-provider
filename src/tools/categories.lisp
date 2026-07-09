@@ -38,9 +38,11 @@
     ((listp categories)
      (loop for cat in categories
            unless (keywordp cat)
-             do (error "Invalid category ~S: must be a keyword" cat)
+             do (error 'tool-schema-error
+                       :reason (format nil "Invalid category ~S: must be a keyword" cat))
            collect cat))
-    (t (error "Invalid categories specification: ~S" categories))))
+    (t (error 'tool-schema-error
+              :reason (format nil "Invalid categories specification: ~S" categories)))))
 
 ;;;; Safety Levels
 
@@ -54,7 +56,8 @@
   (:feature tool-calling)
   (:purpose "Convert safety level keyword to numeric value for comparison")
   (or (position level *safety-level-order*)
-      (error "Invalid safety level: ~S (must be :safe, :moderate, or :dangerous)" level)))
+      (error 'tool-schema-error
+             :reason (format nil "Invalid safety level: ~S (must be :safe, :moderate, or :dangerous)" level))))
 
 (defun/i safety-level<= (level1 level2)
   "Check if LEVEL1 is less than or equal to LEVEL2 in danger.
@@ -72,5 +75,6 @@
   "Normalize LEVEL to a valid safety level, using DEFAULT if NIL."
   (let ((actual (or level default)))
     (unless (valid-safety-level-p actual)
-      (error "Invalid safety level: ~S (must be :safe, :moderate, or :dangerous)" actual))
+      (error 'tool-schema-error
+             :reason (format nil "Invalid safety level: ~S (must be :safe, :moderate, or :dangerous)" actual)))
     actual))

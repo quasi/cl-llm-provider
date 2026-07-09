@@ -104,7 +104,8 @@
     ;; Named built-in validator
     ((keywordp spec)
      (or (get-built-in-validator spec)
-         (error "Unknown built-in validator: ~S" spec)))
+         (error 'tool-schema-error
+                :reason (format nil "Unknown built-in validator: ~S" spec))))
 
     ;; Validator spec plist
     ((and (listp spec) (keywordp (first spec)))
@@ -136,7 +137,8 @@
            (first validators)
            (apply #'make-composite-validator validators))))
 
-    (t (error "Invalid validator specification: ~S" spec))))
+    (t (error 'tool-schema-error
+              :reason (format nil "Invalid validator specification: ~S" spec)))))
 
 (defun make-type-validator-from-spec (type-spec)
   "Create type validator from JSON schema or CL type spec."
@@ -173,7 +175,8 @@
   "Validate using a named built-in validator."
   (let ((fn (get-built-in-validator validator)))
     (unless fn
-      (error "Unknown validator: ~S" validator))
+      (error 'tool-schema-error
+             :reason (format nil "Unknown validator: ~S" validator)))
     (validate-parameter fn parameter-name value tool)))
 
 (defmethod validate-parameter ((validator list) parameter-name value tool)

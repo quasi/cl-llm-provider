@@ -95,8 +95,11 @@ Callers should treat context as read-only after execute-tool returns."))
         (use-handler (fn)
           :report "Supply a handler function"
           :interactive (lambda ()
-                         (format t "Enter handler function: ")
-                         (list (eval (read))))
+                         (format *query-io* "Enter handler lambda: ")
+                         (finish-output *query-io*)
+                         (list (coerce (let ((*read-eval* nil))
+                                         (read *query-io*))
+                                       'function)))
           (setf (tool-handler tool) fn))))
 
     ;; Step 1: Safety check
@@ -148,41 +151,40 @@ Callers should treat context as read-only after execute-tool returns."))
     ;; Step 5: Execute handler
     ;; Use handler-bind to fire lifecycle hooks without destroying restart stack,
     ;; then wrap with restart-case for agent recovery options.
-    (handler-bind
-        ((error (lambda (e)
-                  ;; Record error
-                  (setf (context-end-time context) (get-internal-real-time))
-                  (setf (context-error context) e)
-                  ;; Step 6b: Invoke :on-error hook
-                  (invoke-tool-hook :on-error tool call arguments e)
-                  (when registry
-                    (invoke-global-hooks registry :on-error call arguments e)))))
-      (restart-case
-          (let ((result (funcall (tool-handler tool) arguments)))
-            ;; Record end time
-            (setf (context-end-time context) (get-internal-real-time))
-            (setf (context-result context) result)
-
-            ;; Step 6a: Invoke :on-complete hook
-            (invoke-tool-hook :on-complete tool call arguments result)
-            (when registry
-              (invoke-global-hooks registry :on-complete call arguments result))
-
-            ;; Return result
-            result)
-        (use-error-result ()
-          :report "Return error description as tool result"
-          (let ((e (context-error context)))
-            (format nil "Error executing ~A: ~A" (tool-name tool) e)))
-        (retry-execution ()
-          :report "Retry executing the tool handler"
-          (funcall (tool-handler tool) arguments))
-        (use-value (v)
-          :report "Supply a result value"
-          :interactive (lambda ()
-                         (format t "Enter result value: ")
-                         (list (eval (read))))
-          v)))))
+    (flet ((run-handler ()
+             (let ((result (funcall (tool-handler tool) arguments)))
+               (setf (context-end-time context) (get-internal-real-time))
+               (setf (context-result context) result)
+               (invoke-tool-hook :on-complete tool call arguments result)
+               (when registry
+                 (invoke-global-hooks registry :on-complete call arguments result))
+               result)))
+      (handler-bind
+          ((error (lambda (e)
+                    ;; Record error
+                    (setf (context-end-time context) (get-internal-real-time))
+                    (setf (context-error context) e)
+                    ;; Step 6b: Invoke :on-error hook
+                    (invoke-tool-hook :on-error tool call arguments e)
+                    (when registry
+                      (invoke-global-hooks registry :on-error call arguments e)))))
+        (restart-case
+            (run-handler)
+          (use-error-result ()
+            :report "Return error description as tool result"
+            (let ((e (context-error context)))
+              (format nil "Error executing ~A: ~A" (tool-name tool) e)))
+          (retry-execution ()
+            :report "Retry executing the tool handler"
+            (run-handler))
+          (use-value (v)
+            :report "Supply a result value"
+            :interactive (lambda ()
+                           (format *query-io* "Enter result value (literal): ")
+                           (finish-output *query-io*)
+                           (let ((*read-eval* nil))
+                             (list (read *query-io*))))
+            v))))))
 
 ;;;; Execute Multiple Tool Calls
 
@@ -203,7 +205,8 @@ Callers should treat context as read-only after execute-tool returns."))
      - function - call with (tool-name tool-call), use return value as result
 
    Returns list of (tool-call . result) pairs.
-   For error cases, result may be a condition object if :skip is used."
+   Signals tool-approval-error / tool-safety-violation instead of recording
+   them as LLM-visible result strings."
   (:feature tool-calling)
   (:purpose "Batch-execute all tool calls from a completion response")
   (let ((calls (response-tool-calls response))
@@ -214,17 +217,22 @@ Callers should treat context as read-only after execute-tool returns."))
         (cond
           ;; Tool found - execute it
           (tool
-           (handler-case
-               (let ((result (execute-tool tool call
-                                           :registry registry
-                                           :skip-approval skip-approval
-                                           :skip-validation skip-validation
-                                           :approval-callback approval-callback
-                                           :max-safety-level max-safety-level)))
-                 (push (cons call result) results))
-             (error (e)
-               ;; Store error as result
-               (push (cons call e) results))))
+           (block execute-one
+             (handler-bind
+                 ((error (lambda (e)
+                           ;; Approval rejections and safety violations must reach
+                           ;; the caller; ordinary tool failures can become results.
+                           (unless (typep e '(or tool-approval-error
+                                                 tool-safety-violation))
+                             (push (cons call e) results)
+                             (return-from execute-one)))))
+               (push (cons call (execute-tool tool call
+                                              :registry registry
+                                              :skip-approval skip-approval
+                                              :skip-validation skip-validation
+                                              :approval-callback approval-callback
+                                              :max-safety-level max-safety-level))
+                     results))))
 
           ;; Tool not found - handle according to on-missing-tool
           (t
@@ -244,8 +252,11 @@ Callers should treat context as read-only after execute-tool returns."))
                 (use-handler (fn)
                   :report "Supply a handler function for this tool call"
                   :interactive (lambda ()
-                                 (format t "Enter handler function: ")
-                                 (list (eval (read))))
+                                 (format *query-io* "Enter handler lambda: ")
+                                 (finish-output *query-io*)
+                                 (list (coerce (let ((*read-eval* nil))
+                                                 (read *query-io*))
+                                               'function)))
                   (handler-case
                       (let ((result (funcall fn (tool-call-arguments call))))
                         (push (cons call result) results))

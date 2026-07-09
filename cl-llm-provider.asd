@@ -4,27 +4,25 @@
   Author: quasi / quasiLabs
 |#
 
-(in-package :cl-user)
-(defpackage cl-llm-provider-asd
-  (:use :cl :asdf :uiop))
-(in-package :cl-llm-provider-asd)
-
-(defsystem "cl-llm-provider"
+(asdf:defsystem "cl-llm-provider"
   :version "0.1.0"
   :author "quasi / quasiLabs"
   :license "MIT"
-  :description "Unified Common Lisp interface for multiple LLM provider APIs (Anthropic, OpenAI, Ollama, OpenRouter)"
+  :homepage "https://github.com/quasi/cl-llm-provider"
+  :source-control (:git "https://github.com/quasi/cl-llm-provider.git")
+  :bug-tracker "https://github.com/quasi/cl-llm-provider/issues"
+  :description "Unified Common Lisp interface for multiple LLM provider APIs (Anthropic, OpenAI, Gemini, Ollama, OpenRouter)"
   :depends-on (:alexandria
                :serapeum
                :dexador
                :yason
                :bordeaux-threads
                :cl-ppcre
-               :uiop
-               :telos)
+               :uiop)
   :components ((:module "src"
                 :components
-                ((:file "package")
+                ((:file "telos-shim")
+                 (:file "package" :depends-on ("telos-shim"))
                  (:file "features" :depends-on ("package"))
                  (:file "conditions" :depends-on ("package" "features"))
                  (:file "types" :depends-on ("package"))
@@ -60,7 +58,7 @@
                  (:file "recovery" :depends-on ("package" "features" "conditions" "config")))))
   :in-order-to ((test-op (test-op "cl-llm-provider/test"))))
 
-(defsystem "cl-llm-provider/test"
+(asdf:defsystem "cl-llm-provider/test"
   :author "quasi / quasiLabs"
   :license "MIT"
   :depends-on ("cl-llm-provider"

@@ -103,7 +103,7 @@ and overloaded conditions. Falls back to exponential backoff with jitter."
 (defun/i make-retry-handler (&key (max-retries 3)
                                    (backoff-fn #'default-backoff)
                                    on-retry)
-  "Create a handler function that retries transient errors via available restarts.
+  "Create a fresh handler function that retries transient errors via restarts.
 
 MAX-RETRIES - maximum number of retry attempts (default 3)
 BACKOFF-FN - function (attempt) -> seconds to wait (default: exponential with jitter)
@@ -112,11 +112,12 @@ ON-RETRY - optional callback (lambda (condition attempt) ...) called before each
 Returns a function suitable for handler-bind. The handler:
 1. Checks if the error is transient (via transient-error-p)
 2. If retries remaining, waits per backoff-fn or provider hint
-3. Invokes the best available retry restart (wait-and-retry or retry)
+3. Invokes the best available retry restart (retry or wait-and-retry)
 4. If no retry restart found, declines to handle (error propagates)
 5. If retries exhausted, declines to handle
 
-Note: This handler invokes restarts established by the signaling code.
+Create a fresh handler per request: the attempt counter is closed over and
+never resets. This handler invokes restarts established by the signaling code.
 For full retry (re-executing the body), use with-auto-recovery instead.
 
 Example:
@@ -139,9 +140,10 @@ Example:
                              (funcall backoff-fn attempts))))
           (when (and wait-time (> wait-time 0))
             (sleep wait-time)))
-        ;; Try to invoke a retry restart
-        (let ((restart (or (find-restart 'wait-and-retry condition)
-                           (find-restart 'retry condition))))
+        ;; Prefer RETRY: this handler already slept above, and WAIT-AND-RETRY
+        ;; may sleep the provider hint a second time.
+        (let ((restart (or (find-restart 'retry condition)
+                           (find-restart 'wait-and-retry condition))))
           (when restart
             (invoke-restart restart)))))))
 
@@ -188,16 +190,17 @@ Example:
                        :on-retry (lambda (e attempt)
                                    (format t \"Retry ~D: ~A~%\" attempt e)))
     (complete messages))"
-  (with-gensyms (retry-count max-r bb fallbacks on-retry-fn condition wait)
+  (with-gensyms (retry-count max-r bb fallbacks on-retry-fn condition wait
+                 recovery-block retry-point)
     `(let ((,retry-count 0)
            (,max-r ,max-retries)
            (,bb ,backoff-base)
-           (,fallbacks ,(when fallback-providers `(copy-list ,fallback-providers)))
+           (,fallbacks (copy-list ,fallback-providers))
            (,on-retry-fn ,on-retry)
            (*default-provider* *default-provider*))  ; shadow for safe fallback rebinding
-       (block auto-recovery
+       (block ,recovery-block
          (tagbody
-           retry-point
+           ,retry-point
            (handler-bind
                ((llm-provider-error
                  (lambda (,condition)
@@ -211,15 +214,15 @@ Example:
                         (let ((,wait (retry-wait-time ,condition ,retry-count ,bb)))
                           (when (> ,wait 0)
                             (sleep ,wait)))
-                        (go retry-point))
+                        (go ,retry-point))
                        ;; Retries exhausted, try fallback provider
                        (,fallbacks
                         (setf *default-provider* (pop ,fallbacks))
                         (setf ,retry-count 0)  ; reset retries for new provider
                         (when ,on-retry-fn
                           (funcall ,on-retry-fn ,condition 0))
-                        (go retry-point)))))))
-             (return-from auto-recovery (progn ,@body))))))))
+                        (go ,retry-point)))))))
+             (return-from ,recovery-block (progn ,@body))))))))
 
 ;;; Telos Intent Annotations
 

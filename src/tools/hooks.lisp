@@ -89,6 +89,7 @@
   (let ((on-error-fn nil)
         (actual-args nil))
     ;; Find :on-error keyword position and extract positional args before it
+    ;; TODO: accept :on-error via explicit &key.
     (let ((on-error-pos (position :on-error args)))
       (if on-error-pos
           (setf actual-args (subseq args 0 on-error-pos)

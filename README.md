@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Unified Common Lisp interface for multiple LLM providers with tool calling support.**  Works with Anthropic, OpenAI, Gemini, Ollama, Openrouter and any OpenAI-compatible API. Extensive use of conditions and telos to give agents more options to recover from errors.
+**Unified Common Lisp interface for multiple LLM providers with tool calling support.**  Works with Anthropic, OpenAI, Gemini, Ollama, Openrouter and any OpenAI-compatible API. Extensive use of conditions and Telos-style intent annotations gives agents more options to recover from errors; a built-in Telos shim lets the library load without a separate Telos install.
 
 > This Library is designed by me and  implemented by Claude with my inputs. This is designed for consumption by Agents as well as Humans.  If you have a problem with Agent written code then this library is *not* for you. 
 
@@ -193,7 +193,7 @@ See [docs/agent/README.md](docs/agent/README.md) for agent documentation index.
 | **Anthropic** (Claude) | ✅ | ❌ | ✅ (native) | ✅ |
 | **OpenAI** (GPT-4, etc.) | ✅ | ✅ | ✅ (function calling) | ✅ |
 | **Google Gemini** | ✅ | ✅ | ✅ (function calling) | ✅ |
-| **Ollama** (local models) | ✅ | ✅ | ✅ (OpenAI-compatible) | ✅ |
+| **Ollama** (local models) | ✅ | ✅ | ✅ (OpenAI-compatible) | ❌ |
 | **OpenRouter** | ✅ | ✅ | ✅ (multi-provider) | ✅ |
 | **OpenAI-compatible** (Groq, Together, vLLM) | ✅ | ✅ | ✅ | ✅ |
 
@@ -208,6 +208,7 @@ See [docs/agent/README.md](docs/agent/README.md) for agent documentation index.
 - **Performance Profiling** - Optional timing breakdown for optimization
 - **Observability Hooks** - Before/after request callbacks for logging, metrics, debugging
 - **Comprehensive Error Handling** - Restarts for rate limits, auth failures, API errors
+- **Provider Extension Points** - `translate-message-to-provider`, `provider-http-post`, and `stream-tool-calls` are exported for custom providers and agents
 - **Configuration via Lisp** - Full power of Lisp for provider setup
 - **Thread-Safe** - Safe for concurrent requests across threads
 - **Opt-in Design** - Load config only when you want it; defaults are sensible
@@ -216,7 +217,7 @@ See [docs/agent/README.md](docs/agent/README.md) for agent documentation index.
 
 ## Testing
 
-Comprehensive test suite included: **423 tests, 100% passing**.
+Comprehensive offline test suite included.
 
 **Test categories:**
 - Provider protocols and request/response handling
@@ -224,12 +225,11 @@ Comprehensive test suite included: **423 tests, 100% passing**.
 - Tool definition and tool calling workflows
 - Error handling and recovery
 - Configuration and defaults
+- Telos shim/package loading
 
 **Run tests:**
 ```bash
-sbcl --noinform --non-interactive --load tests/test-tools-support.lisp
-sbcl --noinform --non-interactive --load tests/test-provider-protocols.lisp
-sbcl --noinform --non-interactive --load tests/test-token-metadata-comprehensive.lisp
+sbcl --noinform --non-interactive --eval '(asdf:test-system "cl-llm-provider")'
 ```
 
 See `tests/README.md` for complete test documentation.
@@ -265,7 +265,7 @@ All are standard, well-maintained libraries available via Quicklisp.
 
 Contributions welcome! Please ensure:
 - Code follows existing style conventions
-- All 423 tests pass
+- The full ASDF test system passes
 - New features include tests
 - Documentation is updated
 

@@ -155,6 +155,9 @@
     (finish-output stream)
     (let ((input (read-line stream)))
       (cond
+        ((zerop (length input))
+         (format stream "Empty input. Rejecting.~%")
+         :rejected)
         ((member (char-upcase (char input 0)) '(#\A #\Y))
          :approved)
         ((member (char-upcase (char input 0)) '(#\R #\N))
@@ -167,7 +170,8 @@
         ((char-equal (char input 0) #\E)
          (format stream "Enter new arguments plist: ")
          (finish-output stream)
-         (let ((new-args (read stream)))
+         (let ((new-args (let ((*read-eval* nil))
+                           (read stream))))
            (list :edited new-args)))
         (t
          (format stream "Invalid input. Rejecting.~%")

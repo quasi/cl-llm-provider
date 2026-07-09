@@ -60,6 +60,10 @@
    #:needs-approval-p
    #:request-tool-approval
    #:normalize-approval-result
+   #:make-auto-approve-callback
+   #:make-auto-reject-callback
+   #:make-safety-based-callback
+   #:make-interactive-approval-callback
 
    ;; Hooks
    #:invoke-tool-hook

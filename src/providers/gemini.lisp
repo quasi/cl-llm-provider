@@ -43,12 +43,12 @@ Reuses OpenAI request format since Gemini's /v1beta/openai/ endpoint is compatib
         ;; Build request body (OpenAI format)
         (setf (gethash "model" body) model)
         (setf (gethash "messages" body)
-              (if system
-                  ;; Add system message at the beginning
-                  (cons (plist-to-hash (list :role "system" :content system))
-                        (mapcar #'plist-to-hash messages))
-                  ;; No system message
-                  (mapcar #'plist-to-hash messages)))
+              (let ((all (if system
+                             (cons (list :role "system" :content system) messages)
+                             messages)))
+                (map 'vector
+                     (lambda (m) (translate-message-to-provider provider m))
+                     all)))
 
         (when max-tokens
           (setf (gethash "max_tokens" body) max-tokens))
@@ -77,29 +77,8 @@ Reuses OpenAI request format since Gemini's /v1beta/openai/ endpoint is compatib
                 (yason:encode body s)))))
 
     ;; Make HTTP request (with timing)
-    (multiple-value-bind (response-body status-code)
-        (with-performance-timing (:api-time)
-          (handler-case
-              (dex:post url
-                        :headers headers
-                        :content encoded-body
-                        :force-string t)
-            (dex:http-request-failed (e)
-              (values (dex:response-body e) (dex:response-status e)))
-            (error (e)
-              (error 'provider-network-error
-                     :provider provider
-                     :url url
-                     :operation :completion
-                     :original-error e
-                     :message (format nil "Network error: ~A" e)))))
-
-      (if (and (>= status-code 200) (< status-code 300))
-          (yason:parse response-body)
-          (handle-http-error status-code
-                            (handler-case (yason:parse response-body)
-                              (error () response-body))
-                            provider)))))
+    (with-performance-timing (:api-time)
+      (provider-http-post provider url headers encoded-body :operation :completion))))
 
 (defmethod parse-completion-response ((provider gemini-provider) raw-response
                                       &key performance)
@@ -167,29 +146,8 @@ Reuses OpenAI request format since Gemini's /v1beta/openai/ endpoint is compatib
                 (yason:encode body s)))))
 
     ;; Make HTTP request (with timing)
-    (multiple-value-bind (response-body status-code)
-        (with-performance-timing (:api-time)
-          (handler-case
-              (dex:post url
-                        :headers headers
-                        :content encoded-body
-                        :force-string t)
-            (dex:http-request-failed (e)
-              (values (dex:response-body e) (dex:response-status e)))
-            (error (e)
-              (error 'provider-network-error
-                     :provider provider
-                     :url url
-                     :operation :embedding
-                     :original-error e
-                     :message (format nil "Network error: ~A" e)))))
-
-      (if (and (>= status-code 200) (< status-code 300))
-          (yason:parse response-body)
-          (handle-http-error status-code
-                            (handler-case (yason:parse response-body)
-                              (error () response-body))
-                            provider)))))
+    (with-performance-timing (:api-time)
+      (provider-http-post provider url headers encoded-body :operation :embedding))))
 
 (defmethod parse-embedding-response ((provider gemini-provider) raw-response
                                      &key performance)
@@ -241,7 +199,9 @@ Reuses OpenAI request format since Gemini's /v1beta/openai/ endpoint is compatib
                            (cons (list :role "system" :content system) messages)
                            messages)))
       (setf (gethash "messages" body)
-            (map 'vector #'plist-to-hash all-messages)))
+            (map 'vector
+                 (lambda (m) (translate-message-to-provider provider m))
+                 all-messages)))
 
     (when max-tokens
       (setf (gethash "max_tokens" body) max-tokens))
@@ -267,7 +227,8 @@ Reuses OpenAI request format since Gemini's /v1beta/openai/ endpoint is compatib
               (dex:post url
                         :headers headers
                         :content encoded-body
-                        :want-stream t)
+                        :want-stream t
+                        :read-timeout (getf (provider-options provider) :timeout 120))
             (declare (ignore response-headers))
             (if (and (>= status-code 200) (< status-code 300))
                 (make-instance 'completion-stream

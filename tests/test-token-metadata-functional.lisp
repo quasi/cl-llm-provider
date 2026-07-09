@@ -7,18 +7,9 @@
 (ql:quickload :cl-ppcre :silent t)
 (ql:quickload :uiop :silent t)
 
-;; Load the library
-(load "src/package.lisp")
-(load "src/conditions.lisp")
-(load "src/types.lisp")
-(load "src/protocol.lisp")
-(load "src/api.lisp")
-(load "src/tools.lisp")
-(load "src/config.lisp")
-(load "src/providers/anthropic.lisp")
-(load "src/providers/openai.lisp")
-(load "src/providers/ollama.lisp")
-(load "src/providers/openrouter.lisp")
+;; Load the library in ASDF dependency order.
+(pushnew #p"./" asdf:*central-registry* :test #'equal)
+(asdf:load-system "cl-llm-provider")
 
 (in-package :cl-llm-provider)
 
@@ -32,6 +23,15 @@
                  :model "qwen3:1.7b"))
 
 (format t "Provider created: ~A~%~%" *ollama*)
+
+(unless (handler-case
+            (progn
+              (dex:get "http://localhost:11434/api/tags")
+              t)
+          (error (e)
+            (format t "Skipping functional Ollama metadata tests: ~A~%" e)
+            nil))
+  (uiop:quit 0))
 
 ;;; Test 1: Basic Completion with Token Counts
 (format t "~%=== Test 1: Basic Completion with Token Counts ===~%")

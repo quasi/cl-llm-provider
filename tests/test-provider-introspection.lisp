@@ -106,12 +106,12 @@
     (fiveam:is (getf caps :vision))))
 
 (fiveam:test provider-capabilities-ollama
-  "Ollama should support embeddings but not vision by default"
+  "Ollama should support embeddings but not streaming/vision by default"
   (let* ((provider (make-provider :ollama :base-url "http://localhost:11434" :model "llama3"))
          (caps (provider-capabilities provider)))
     (fiveam:is (getf caps :tools))
     (fiveam:is (getf caps :embeddings))
-    (fiveam:is (getf caps :streaming))
+    (fiveam:is (null (getf caps :streaming)))
     (fiveam:is (null (getf caps :vision)))))
 
 (fiveam:test provider-capabilities-openrouter
@@ -302,4 +302,3 @@
 (fiveam:test generic-function-provider-config-summary-exists
   "provider-config-summary generic function should exist"
   (fiveam:is (fboundp 'provider-config-summary)))
-

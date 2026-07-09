@@ -55,9 +55,11 @@ Mutable: set during make-provider from provider-default-base-url.")
 
 (defclass completion-response ()
   ((id :initarg :id
+       :initform nil
        :reader response-id
        :documentation "Unique response identifier.")
    (model :initarg :model
+          :initform nil
           :reader response-model
           :documentation "Model that generated the response.")
    (content :initarg :content
@@ -65,6 +67,7 @@ Mutable: set during make-provider from provider-default-base-url.")
             :reader response-content
             :documentation "Text content of the response (nil if tool call).")
    (message :initarg :message
+            :initform nil
             :reader response-message
             :documentation "Full message plist for conversation continuation.")
    (tool-calls :initarg :tool-calls
@@ -72,12 +75,15 @@ Mutable: set during make-provider from provider-default-base-url.")
                :reader response-tool-calls
                :documentation "List of tool-call objects if model requested tool use.")
    (finish-reason :initarg :finish-reason
+                  :initform nil
                   :reader response-finish-reason
                   :documentation "Why generation stopped (:stop, :length, :tool-calls).")
    (usage :initarg :usage
+          :initform nil
           :reader response-usage
           :documentation "Token usage plist (:prompt-tokens N :completion-tokens M :total-tokens T).")
    (raw :initarg :raw
+        :initform nil
         :reader response-raw
         :documentation "Original provider response for debugging/advanced use.")
    (performance :initarg :performance
@@ -164,7 +170,10 @@ Mutated internally via vector-push-extend in buffer-append.")
    (error-condition :initarg :error-condition
                     :initform nil
                     :accessor stream-error-condition
-                    :documentation "Error condition if state is :error."))
+                    :documentation "Error condition if state is :error.")
+   (tool-call-parts :initform (make-hash-table)
+                    :accessor stream-tool-call-parts
+                    :documentation "Tool call deltas accumulated while streaming."))
   (:documentation "Represents an active streaming completion response."))
 
 (defmethod print-object ((stream completion-stream) stream-out)
@@ -191,15 +200,19 @@ Mutated internally via vector-push-extend in buffer-append.")
 
 (defclass embedding-response ()
   ((embeddings :initarg :embeddings
+               :initform nil
                :reader response-embeddings
                :documentation "List of vectors (each vector is a list of floats).")
    (model :initarg :model
+          :initform nil
           :reader response-model
           :documentation "Model used for embeddings.")
    (usage :initarg :usage
+          :initform nil
           :reader response-usage
           :documentation "Token usage plist.")
    (raw :initarg :raw
+        :initform nil
         :reader response-raw
         :documentation "Original provider response.")
    (performance :initarg :performance
@@ -216,7 +229,7 @@ Mutated internally via vector-push-extend in buffer-append.")
   (print-unreadable-object (response stream :type t)
     (format stream "~A: ~D vectors"
             (response-model response)
-            (length (response-embeddings response)))))
+            (length (or (response-embeddings response) '())))))
 
 ;;;; Tool Types
 
@@ -293,18 +306,25 @@ Mutated internally via vector-push-extend in buffer-append.")
 (defun %json-hash-to-keyword-plist (value)
   "Recursively convert a yason-parsed hash-table (string keys) to a keyword plist.
 Nested hash-tables become nested plists.  Non-string vectors become lists.
-Strings and other atoms pass through unchanged, so this is safe to call
+Strings, lists, and other atoms pass through recursively/unchanged as needed, so this is safe to call
 on data that might already be a plist.  NIL and empty hash-tables return NIL.
 Inverse of plist-to-hash (protocol.lisp)."
   (typecase value
     (hash-table
      (let (result)
-       ;; TRUST: keys originate from LLM provider JSON responses, not end-user input.
-       ;; Keywords are never GC'd, so this assumes bounded key cardinality.
        (maphash (lambda (k v)
-                  (let ((keyword (intern (string-upcase
-                                         (substitute #\- #\_ k))
-                                        :keyword)))
+                  ;; TRUST boundary: keys come from provider JSON, but tool-call
+                  ;; argument keys are model-generated. Keywords are never GC'd,
+                  ;; so pathologically long keys stay strings.
+                  (let ((keyword (if (<= (length k) 128)
+                                     (intern (string-upcase
+                                              (substitute #\- #\_ k))
+                                             :keyword)
+                                     (progn
+                                       (warn 'llm-provider-warning
+                                             :message (format nil "JSON key of ~D chars exceeds intern cap; keeping string key"
+                                                              (length k)))
+                                       k))))
                     (push (%json-hash-to-keyword-plist v) result)
                     (push keyword result)))
                 value)
@@ -312,6 +332,8 @@ Inverse of plist-to-hash (protocol.lisp)."
     (string value)
     (vector
      (map 'list #'%json-hash-to-keyword-plist value))
+    (cons
+     (mapcar #'%json-hash-to-keyword-plist value))
     (t value)))
 
 (defun %parse-tool-arguments (args tool-name)
@@ -321,7 +343,8 @@ normalizes the result to a keyword plist via initialize-instance :after."
   (if (stringp args)
       (handler-case (yason:parse args)
         (error (e)
-          (warn "Failed to parse tool arguments for ~A: ~A" tool-name e)
+          (warn 'llm-provider-warning
+                :message (format nil "Failed to parse tool arguments for ~A: ~A" tool-name e))
           nil))
       args))
 

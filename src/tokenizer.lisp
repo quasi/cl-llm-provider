@@ -8,12 +8,12 @@
 ;;;; Uses character-based estimation as a portable fallback.
 ;;;; More accurate tokenizers can be added for specific models.
 
-(defvar *chars-per-token-estimate* 4
+(defparameter *chars-per-token-estimate* 4
   "Average characters per token for estimation.
 Most English text averages 4 characters per token.
 This is a conservative estimate for planning purposes.")
 
-(defvar *message-overhead-tokens* 4
+(defparameter *message-overhead-tokens* 4
   "Token overhead per message for role and formatting.
 OpenAI adds ~4 tokens per message for role/formatting.")
 
@@ -55,6 +55,7 @@ Returns estimated token count (integer)."
 MESSAGES - List of message plists
 MODEL - Model identifier (string) - used for model-specific tokenizers
 PROVIDER - Provider instance - used for provider-specific tokenizers
+MODEL and PROVIDER are currently ignored (heuristic estimate only).
 
 Returns estimated token count (integer).
 

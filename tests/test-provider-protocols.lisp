@@ -309,6 +309,11 @@
   ;; Anthropic requires max_tokens, others don't
   (fiveam:is (numberp 4096))) ;; Verify default is a number
 
+(fiveam:test config-path-reload-safe
+  "The default config path is computed on demand."
+  (fiveam:is (pathnamep (default-config-file-path)))
+  (fiveam:is (equal (default-config-file-path) +default-config-file-path+)))
+
 ;;;; Provider-Specific Behavior Tests
 
 (fiveam:test anthropic-requires-max-tokens
@@ -322,6 +327,30 @@
                                :base-url "http://localhost:11434"
                                :model "qwen3:1.7b")))
     (fiveam:is (typep provider 'ollama-provider))))
+
+(fiveam:test ollama-capabilities-honest
+  "Ollama does not claim streaming until its NDJSON streaming protocol is implemented."
+  (let ((caps (provider-capabilities (make-provider :ollama :model "llama3"))))
+    (fiveam:is (eq nil (getf caps :streaming)))
+    (fiveam:is (eq t (getf caps :tools)))))
+
+(fiveam:test ollama-tool-call-ids-unique
+  "Ollama tool calls without provider IDs get unique synthetic IDs."
+  (let* ((provider (make-provider :ollama :model "llama3"))
+         (raw (yason:parse "{\"model\":\"llama3\",\"done\":true,\"message\":{\"tool_calls\":[{\"function\":{\"name\":\"a\",\"arguments\":\"{}\"}},{\"function\":{\"name\":\"b\",\"arguments\":\"{}\"}}]}}"))
+         (resp (parse-completion-response provider raw))
+         (ids (mapcar #'tool-call-id (response-tool-calls resp))))
+    (fiveam:is (= 2 (length ids)))
+    (fiveam:is (not (string= (first ids) (second ids))))))
+
+(fiveam:test ollama-embed-response-parses-batch
+  "Ollama /api/embed embeddings array is normalized to a list of vectors."
+  (let* ((provider (make-provider :ollama :model "nomic-embed-text"))
+         (raw (yason:parse "{\"model\":\"nomic-embed-text\",\"embeddings\":[[0.1,0.2],[0.3,0.4]],\"prompt_eval_count\":4}"))
+         (resp (parse-embedding-response provider raw)))
+    (fiveam:is (= 2 (length (response-embeddings resp))))
+    (fiveam:is (equal '(0.1d0 0.2d0) (first (response-embeddings resp))))
+    (fiveam:is (= 4 (getf (response-usage resp) :prompt-tokens)))))
 
 (fiveam:test openai-supports-tool-choice
   "OpenAI provider should support tool_choice parameter"
@@ -396,4 +425,3 @@
     (let ((msg (response-message response)))
       (fiveam:is (getf msg :role))
       (fiveam:is (string= (getf msg :role) "assistant")))))
-

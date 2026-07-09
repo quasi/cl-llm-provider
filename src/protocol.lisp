@@ -122,12 +122,16 @@ Default implementation returns nil (no standard env var)."))
 
 (defgeneric provider-type (provider)
   (:documentation "Return provider type as a keyword.
-Returns one of: :openai, :anthropic, :ollama, :openrouter, :openai-compatible.
+Returns one of: :openai, :anthropic, :gemini, :ollama, :openrouter, :openai-compatible.
 The keyword is suitable for use in eql dispatch, equality tests, and serialization."))
 
 (defgeneric provider-name (provider)
   (:documentation "Return human-readable provider name for display.
 Returns a string suitable for UIs (e.g., \"OpenAI\", \"Anthropic\")."))
+
+(defmethod provider-name ((provider llm-provider))
+  "Fallback display name for custom providers without a specialized method."
+  "Provider")
 
 (defgeneric provider-capabilities (provider)
   (:documentation "Return plist of provider capabilities.
@@ -176,8 +180,8 @@ TOOL-DEFINITION - tool-definition object
 Returns provider-specific tool schema (hash-table or alist).
 Default implementation returns OpenAI format."))
 
-(defmethod translate-tool-to-provider ((provider llm-provider) (tool tool-definition))
-  "Default implementation: OpenAI tool format."
+(defun parameter-specs-to-json-schema (tool)
+  "Convert TOOL's parameter specs into a JSON Schema object."
   (let ((parameters (make-hash-table :test 'equal)))
     (setf (gethash "type" parameters) "object")
     (setf (gethash "properties" parameters) (make-hash-table :test 'equal))
@@ -236,6 +240,12 @@ Default implementation returns OpenAI format."))
     (when (tool-required-params tool)
       (setf (gethash "required" parameters) (tool-required-params tool)))
 
+    parameters))
+
+(defmethod translate-tool-to-provider ((provider llm-provider) (tool tool-definition))
+  "Default implementation: OpenAI tool format."
+  (declare (ignore provider))
+  (let ((parameters (parameter-specs-to-json-schema tool)))
     ;; Return OpenAI function tool format
     (let ((result (make-hash-table :test 'equal)))
       (setf (gethash "type" result) "function")
@@ -245,6 +255,22 @@ Default implementation returns OpenAI format."))
         (setf (gethash "parameters" function) parameters)
         (setf (gethash "function" result) function))
       result)))
+
+(defgeneric translate-message-to-provider (provider message)
+  (:documentation "Translate a canonical message plist into PROVIDER's wire format.
+
+MESSAGE is a keyword plist as produced by response-message, make-tool-result,
+or user code (:role \"user\"/\"assistant\"/\"system\"/\"tool\", :content ...).
+
+Returns a hash-table ready for yason encoding. The default method implements
+the OpenAI chat format."))
+
+(defmethod translate-message-to-provider ((provider llm-provider) message)
+  "OpenAI format. Strips the library-internal :is-error key from tool messages."
+  (declare (ignore provider))
+  (let ((msg (copy-list message)))
+    (remf msg :is-error)
+    (plist-to-hash msg)))
 
 (defgeneric parse-tool-calls (provider raw-response)
   (:documentation "Extract tool calls from provider response format.
@@ -344,30 +370,34 @@ Displays timing breakdown or 'not recorded' for each metric when profiling was d
 
 ;;;; HTTP Request Helpers
 
+(defun %json-plist-p (value)
+  "True if VALUE is a keyword plist."
+  (and (consp value) (keywordp (first value))))
+
+(defun %lisp-to-json-value (value)
+  "Recursively convert a Lisp VALUE into yason-encodable data.
+Keyword plists become hash-tables, other lists become vectors, and atoms pass
+through unchanged. Inverse of %json-hash-to-keyword-plist."
+  (cond
+    ((%json-plist-p value) (plist-to-hash value))
+    ((consp value) (map 'vector #'%lisp-to-json-value value))
+    (t value)))
+
 (defun plist-to-hash (plist &key (test 'equal))
   "Convert a plist to a hash table with string keys, recursively.
 Keywords like :role become \"role\", :tool-call-id becomes \"tool_call_id\";
 string keys are preserved as-is. Values that are keyword plists become nested
 hash-tables; other lists become vectors. Inverse of %json-hash-to-keyword-plist."
-  (labels ((json-plist-p (value)
-             "Check if value is a keyword plist."
-             (and (consp value) (keywordp (first value))))
-           (lisp-to-json-value (value)
-             "Recursively convert Lisp value to JSON-encodable structure."
-             (cond
-               ((json-plist-p value) (plist-to-hash value))
-               ((consp value) (map 'vector #'lisp-to-json-value value))
-               (t value))))
-    (let ((hash (make-hash-table :test test)))
-      (loop for (key value) on plist by #'cddr
-            for string-key = (etypecase key
-                              (keyword
-                               ;; Convert hyphens to underscores for JSON compatibility
-                               (substitute #\_ #\-
-                                          (string-downcase (symbol-name key))))
-                              (string key))
-            do (setf (gethash string-key hash) (lisp-to-json-value value)))
-      hash)))
+  (let ((hash (make-hash-table :test test)))
+    (loop for (key value) on plist by #'cddr
+          for string-key = (etypecase key
+                            (keyword
+                             ;; Convert hyphens to underscores for JSON compatibility
+                             (substitute #\_ #\-
+                                        (string-downcase (symbol-name key))))
+                            (string key))
+          do (setf (gethash string-key hash) (%lisp-to-json-value value)))
+    hash))
 
 (defun/i make-http-headers (provider &key content-type additional-headers)
   "Build HTTP headers for PROVIDER request.
@@ -399,18 +429,18 @@ Returns a string describing the error."
     ;; Hash table - try various common error formats
     ((hash-table-p body)
      (or
-      ;; OpenAI format: {"error": {"message": "...", "type": "...", "code": "..."}}
-      (when-let ((error (gethash "error" body)))
-        (if (hash-table-p error)
+      ;; OpenAI/Anthropic format: {"error": {"message": "...", "type": "..."}}
+      (when-let ((err (gethash "error" body)))
+        (if (hash-table-p err)
             (format nil "~@[~A~]~@[ (~A)~]"
-                    (gethash "message" error)
-                    (gethash "type" error))
-            (prin1-to-string error)))
+                    (gethash "message" err)
+                    (gethash "type" err))
+            (prin1-to-string err)))
 
       ;; Direct message field
       (gethash "message" body)
 
-      ;; Anthropic format: {"error": {"type": "...", "message": "..."}}
+      ;; FastAPI/vLLM format
       (gethash "detail" body)
 
       ;; Try to create a readable summary
@@ -496,7 +526,11 @@ formats. The default method handles common patterns across all providers."))
 
 STATUS-CODE - HTTP status code (integer)
 BODY - Response body (string or hash-table)
-PROVIDER - Provider instance"
+PROVIDER - Provider instance
+
+Contract: if a handler invokes any restart established here, HANDLE-HTTP-ERROR
+returns :RETRY and the caller re-issues the request. If no handler intervenes,
+the condition propagates and this never returns."
   (:feature http-transport)
   (:purpose "Classify HTTP errors and signal typed conditions with restarts")
   (let ((error-message (extract-error-message body)))
@@ -508,11 +542,13 @@ PROVIDER - Provider instance"
                       :body body
                       :message error-message)
              (use-value (new-api-key)
-               :report "Provide a new API key"
+               :report "Provide a new API key and retry"
                :interactive (lambda ()
-                              (format t "Enter new API key: ")
-                              (list (read-line)))
-               (setf (provider-api-key provider) new-api-key))))
+                              (format *query-io* "Enter new API key: ")
+                              (finish-output *query-io*)
+                              (list (read-line *query-io*)))
+               (setf (provider-api-key provider) new-api-key)
+               :retry)))
 
       (429 (let ((retry-after (parse-retry-after body)))
              (restart-case
@@ -526,15 +562,11 @@ PROVIDER - Provider instance"
                  :report (lambda (s)
                            (format s "Wait ~@[~A seconds ~]and retry" retry-after))
                  (when retry-after
-                   (sleep retry-after)))
+                   (sleep retry-after))
+                 :retry)
                (retry ()
-                 :report "Retry immediately")
-               (use-fallback-provider (fallback)
-                 :report "Use a different provider"
-                 :interactive (lambda ()
-                                (format t "Enter fallback provider: ")
-                                (list (read)))
-                 fallback))))
+                 :report "Retry immediately"
+                 :retry))))
 
       (otherwise
        (multiple-value-bind (condition-type extra-initargs)
@@ -547,13 +579,8 @@ PROVIDER - Provider instance"
                     :message error-message
                     extra-initargs)
            (retry ()
-             :report "Retry the request")
-           (use-fallback-provider (fallback)
-             :report "Use a different provider"
-             :interactive (lambda ()
-                            (format t "Enter fallback provider: ")
-                            (list (read)))
-             fallback)))))))
+             :report "Retry the request"
+             :retry)))))))
 
 (defun/i parse-retry-after (body)
   "Extract retry-after value from error response body.
@@ -564,7 +591,12 @@ Returns number of seconds to wait, or nil.
 Checks top-level keys, nested error objects, and string bodies."
   (:feature http-transport)
   (:purpose "Extract retry delay from rate-limit response for automatic retry")
-  (flet ((extract-from-hash (ht)
+  (flet ((normalize (value)
+           (typecase value
+             (real value)
+             (string (parse-integer value :junk-allowed t))
+             (t nil)))
+         (extract-from-hash (ht)
            (or (gethash "retry_after" ht)
                (gethash "retry-after" ht)
                (gethash "Retry-After" ht)
@@ -574,10 +606,42 @@ Checks top-level keys, nested error objects, and string bodies."
                    (or (gethash "retry_after" err)
                        (gethash "retry-after" err)))))))
     (cond
-      ((hash-table-p body)
-       (extract-from-hash body))
-      ;; String body: try parsing as integer (HTTP Retry-After header value)
-      ((stringp body)
-       (handler-case (parse-integer body :junk-allowed t)
-         (error () nil)))
+      ((hash-table-p body) (normalize (extract-from-hash body)))
+      ((stringp body) (normalize body))
       (t nil))))
+
+(defun/i provider-http-post (provider url headers content &key (operation :completion))
+  "POST CONTENT to URL for PROVIDER with typed error handling and working retries.
+
+Returns the parsed JSON response body on 2xx. On HTTP errors delegates to
+HANDLE-HTTP-ERROR; whenever a retry restart is invoked by a handler, the
+request is re-issued from scratch. Honors provider option :timeout in seconds."
+  (:feature http-transport)
+  (:purpose "Single shared HTTP POST path with retry loop for all providers")
+  (let ((read-timeout (getf (provider-options provider) :timeout 120)))
+    (loop
+      (multiple-value-bind (response-body status-code)
+          (handler-case
+              (dex:post url
+                        :headers headers
+                        :content content
+                        :force-string t
+                        :read-timeout read-timeout)
+            (dex:http-request-failed (e)
+              (values (dex:response-body e) (dex:response-status e)))
+            (error (e)
+              (error 'provider-network-error
+                     :provider provider
+                     :url url
+                     :operation operation
+                     :original-error e
+                     :message (format nil "Network error: ~A" e))))
+        (if (and (>= status-code 200) (< status-code 300))
+            (return (yason:parse response-body))
+            (let ((directive (handle-http-error
+                              status-code
+                              (handler-case (yason:parse response-body)
+                                (error () response-body))
+                              provider)))
+              (unless (eq directive :retry)
+                (return directive))))))))

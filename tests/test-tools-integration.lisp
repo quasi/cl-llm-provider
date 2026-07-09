@@ -6,6 +6,65 @@
 
 (fiveam:in-suite tools-integration-suite)
 
+(fiveam:test make-tool-result-omits-nil-is-error
+  (let ((msg (make-tool-result "call_1" "42")))
+    (fiveam:is (null (member :is-error msg))))
+  (let ((msg (make-tool-result "call_1" "boom" :is-error t)))
+    (fiveam:is (eq t (getf msg :is-error)))))
+
+(fiveam:test default-translation-strips-is-error
+  (let* ((provider (make-instance 'cl-llm-provider::openai-provider))
+         (hash (cl-llm-provider:translate-message-to-provider
+                provider (make-tool-result "call_1" "boom" :is-error t))))
+    (fiveam:is (string= "tool" (gethash "role" hash)))
+    (fiveam:is (string= "call_1" (gethash "tool_call_id" hash)))
+    (fiveam:is (null (nth-value 1 (gethash "is_error" hash))))))
+
+(fiveam:test anthropic-tool-result-becomes-user-content-block
+  (let* ((provider (make-instance 'cl-llm-provider::anthropic-provider))
+         (hash (cl-llm-provider:translate-message-to-provider
+                provider (make-tool-result "toolu_1" "22 celsius"))))
+    (fiveam:is (string= "user" (gethash "role" hash)))
+    (let ((block (elt (gethash "content" hash) 0)))
+      (fiveam:is (string= "tool_result" (gethash "type" block)))
+      (fiveam:is (string= "toolu_1" (gethash "tool_use_id" block)))
+      (fiveam:is (string= "22 celsius" (gethash "content" block))))))
+
+(fiveam:test anthropic-coalesces-consecutive-tool-results
+  (let* ((provider (make-instance 'cl-llm-provider::anthropic-provider))
+         (messages (list '(:role "user" :content "weather in Pune and Paris?")
+                         '(:role "assistant"
+                           :content ((:type "tool_use" :id "t1" :name "w" :input (:city "Pune"))
+                                     (:type "tool_use" :id "t2" :name "w" :input (:city "Paris"))))
+                         (make-tool-result "t1" "30C")
+                         (make-tool-result "t2" "18C")))
+         (wire (cl-llm-provider::%anthropic-wire-messages provider messages)))
+    (fiveam:is (= 3 (length wire)))
+    (let ((last-msg (elt wire 2)))
+      (fiveam:is (string= "user" (gethash "role" last-msg)))
+      (fiveam:is (= 2 (length (gethash "content" last-msg)))))))
+
+(fiveam:test tool-loop-round-trip-openai-format
+  (let* ((provider (make-instance 'cl-llm-provider::openai-provider))
+         (raw (yason:parse "{\"id\":\"c1\",\"model\":\"gpt-x\",\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"add\",\"arguments\":\"{\\\"a\\\":2,\\\"b\\\":3}\"}}]}}]}"))
+         (resp (cl-llm-provider:parse-completion-response provider raw))
+         (continuation (list '(:role "user" :content "add 2 and 3")
+                             (cl-llm-provider:response-message resp)
+                             (make-tool-result "call_1" "5")))
+         (wire (map 'list (lambda (m)
+                            (cl-llm-provider:translate-message-to-provider provider m))
+                    continuation))
+         (json (with-output-to-string (s) (yason:encode (coerce wire 'vector) s)))
+         (parsed (yason:parse json)))
+    (let* ((assistant (elt parsed 1))
+           (tc (elt (gethash "tool_calls" assistant) 0)))
+      (fiveam:is (hash-table-p tc))
+      (fiveam:is (string= "add" (gethash "name" (gethash "function" tc))))
+      (fiveam:is (string= "call_1" (gethash "id" tc))))
+    (let ((tool-msg (elt parsed 2)))
+      (fiveam:is (string= "tool" (gethash "role" tool-msg)))
+      (fiveam:is (string= "call_1" (gethash "tool_call_id" tool-msg))))))
+
 ;;;; Tool Definition and Setup Tests
 
 (fiveam:test setup-simple-tool
@@ -385,4 +444,3 @@
           (fiveam:is (string= (tool-call-name tool-call) "compute"))
           (fiveam:is (string= (getf (tool-call-arguments tool-call) :expr) "2+2"))
           (fiveam:is (string= (getf result :content) "4")))))))
-

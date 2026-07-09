@@ -251,8 +251,11 @@ When LLM decides to use a tool, it returns a tool call:
 Process tool results and return to conversation:
 ```lisp
 (make-tool-result "call-123"       ;; Call ID to correlate
-                  "8"              ;; Result content
-                  :is-error nil)   ;; Success flag
+                  "8")             ;; Result content; success omits :is-error
+
+(make-tool-result "call-124"
+                  "division by zero"
+                  :is-error t)     ;; Error result
 ```
 
 ### Conversation Flow

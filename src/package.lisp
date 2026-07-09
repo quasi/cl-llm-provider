@@ -30,11 +30,13 @@
    #:chunk-finish-reason
    #:chunk-index
    #:chunk-usage
+   #:chunk-tool-call-delta
    #:completion-stream
    #:stream-open-p
    #:stream-closed-p
    #:stream-accumulated-content
    #:stream-state
+   #:stream-tool-calls
 
    ;; Tool calling
    #:define-tool
@@ -43,6 +45,7 @@
 
    ;; Configuration
    #:+default-config-file-path+
+   #:default-config-file-path
    #:load-configuration-from-file
    #:configure-defaults
    #:*default-provider*
@@ -136,6 +139,8 @@
    #:tool-schema-error
    #:error-tool
    #:error-reason
+   #:tool-registration-error
+   #:error-tool-name
 
    ;; Enhanced tool conditions
    #:tool-validation-error
@@ -255,6 +260,8 @@
    #:provider-default-base-url
    #:provider-api-key-env-var
    #:translate-tool-to-provider
+   #:translate-message-to-provider
+   #:provider-http-post
    #:parse-tool-calls
 
    ;; Provider introspection

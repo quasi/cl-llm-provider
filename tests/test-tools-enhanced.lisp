@@ -128,6 +128,18 @@
     (fiveam:is (eq tool (find-tool reg "test_tool")))
     (fiveam:is (null (find-tool reg "nonexistent")))))
 
+(fiveam:test register-tool-signals-typed-condition
+  "Duplicate registrations signal tool-registration-error with the tool name."
+  (let* ((reg (make-tool-registry))
+         (tool (cl-llm-provider:define-tool "dup_tool" "A test tool" nil)))
+    (register-tool reg tool)
+    (handler-case
+        (progn
+          (register-tool reg tool)
+          (fiveam:fail "Duplicate registration should signal."))
+      (cl-llm-provider:tool-registration-error (e)
+        (fiveam:is (string= "dup_tool" (cl-llm-provider:error-tool-name e)))))))
+
 (fiveam:test unregister-tool
   "Unregister tools from registry"
   (let* ((reg (make-tool-registry))
@@ -207,6 +219,33 @@
     (fiveam:is (eq :edited d))
     (fiveam:is (equal '(:b 2) a))))
 
+(fiveam:test interactive-approval-rejects-empty-input
+  "Empty interactive input rejects instead of crashing on CHAR."
+  (let* ((stream (make-two-way-stream
+                  (make-string-input-stream (format nil "~%"))
+                  (make-broadcast-stream)))
+         (callback (make-interactive-approval-callback :stream stream))
+         (tool (cl-llm-provider:define-tool "ask" "Ask" nil))
+         (call (make-instance 'cl-llm-provider:tool-call
+                              :id "call-1"
+                              :name "ask"
+                              :arguments nil)))
+    (fiveam:is (eq :rejected (funcall callback tool call nil)))))
+
+(fiveam:test interactive-approval-edit-does-not-read-eval
+  "Edited argument input is read with *read-eval* disabled."
+  (let* ((stream (make-two-way-stream
+                  (make-string-input-stream (format nil "e~%#.(error \"eval\")~%"))
+                  (make-broadcast-stream)))
+         (callback (make-interactive-approval-callback :stream stream))
+         (tool (cl-llm-provider:define-tool "ask_edit" "Ask" nil))
+         (call (make-instance 'cl-llm-provider:tool-call
+                              :id "call-1"
+                              :name "ask_edit"
+                              :arguments nil)))
+    (fiveam:signals reader-error
+      (funcall callback tool call nil))))
+
 ;;;; Hook Tests
 
 (fiveam:test logging-hook-creation
@@ -280,6 +319,55 @@
                                          (declare (ignore tool tc args))
                                          nil)))))
 
+(fiveam:test execute-tool-calls-propagates-safety-conditions
+  "Batch execution keeps safety/approval conditions visible to callers."
+  (let* ((tool (cl-llm-provider:define-tool "danger_batch" "Dangerous" nil
+                                            :safety-level :dangerous
+                                            :handler (lambda (args)
+                                                       (declare (ignore args))
+                                                       t)))
+         (registry (make-tool-registry))
+         (call (make-instance 'cl-llm-provider:tool-call
+                              :id "call-1"
+                              :name "danger_batch"
+                              :arguments nil))
+         (response (make-instance 'cl-llm-provider:completion-response
+                                  :tool-calls (list call))))
+    (register-tool registry tool)
+    (fiveam:signals cl-llm-provider:tool-safety-violation
+      (execute-tool-calls response
+                          :registry registry
+                          :max-safety-level :safe))))
+
+(fiveam:test retry-execution-restart-fires-on-complete-hook
+  "The retry-execution restart retries through the normal hook path."
+  (let* ((attempts 0)
+         (complete-count 0)
+         (tool (cl-llm-provider:define-tool "retry_once" "Retry once" nil
+                                            :handler (lambda (args)
+                                                       (declare (ignore args))
+                                                       (incf attempts)
+                                                       (if (= attempts 1)
+                                                           (error "first")
+                                                           :ok))
+                                            :on-complete (lambda (call args result)
+                                                           (declare (ignore call args result))
+                                                           (incf complete-count))))
+         (call (make-instance 'cl-llm-provider:tool-call
+                              :id "call-1"
+                              :name "retry_once"
+                              :arguments nil)))
+    (let ((result (handler-bind
+                      ((error (lambda (e)
+                                (declare (ignore e))
+                                (let ((restart (find-restart 'retry-execution)))
+                                  (when restart
+                                    (invoke-restart restart))))))
+                    (execute-tool tool call :skip-approval t :skip-validation t))))
+      (fiveam:is (eq :ok result))
+      (fiveam:is (= 2 attempts))
+      (fiveam:is (= 1 complete-count)))))
+
 (fiveam:test execute-tool-with-hooks
   "Execute tool with lifecycle hooks"
   (let* ((hook-calls nil)
@@ -300,4 +388,3 @@
     (execute-tool tool call)
     (fiveam:is (member :start hook-calls))
     (fiveam:is (member :complete hook-calls))))
-

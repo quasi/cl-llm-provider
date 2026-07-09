@@ -12,12 +12,12 @@ Use WITH-PROVIDER for per-thread overrides. Do NOT setf directly in multi-thread
 Thread safety: Mutate only via CONFIGURE-DEFAULTS (serialized with *CONFIG-LOCK*).
 Use WITH-MODEL for per-thread overrides. Do NOT setf directly in multi-threaded code.")
 
-(defvar *default-max-tokens* 4096
+(defparameter *default-max-tokens* 4096
   "Default max-tokens when not specified.
 Thread safety: Mutate only via CONFIGURE-DEFAULTS (serialized with *CONFIG-LOCK*).
 Pass :max-tokens explicitly for per-request overrides.")
 
-(defvar *default-temperature* 1.0
+(defparameter *default-temperature* 1.0
   "Default temperature when not specified.
 Thread safety: Mutate only via CONFIGURE-DEFAULTS (serialized with *CONFIG-LOCK*).
 Pass :temperature explicitly for per-request overrides.")
@@ -27,14 +27,15 @@ Pass :temperature explicitly for per-request overrides.")
 
 ;;;; Configuration File Path
 
-(defconstant +default-config-file-path+
-  (merge-pathnames "cl-llm-provider/config.lisp"
-                   (uiop:xdg-config-home))
-  "Default path for configuration file.
+(defun default-config-file-path ()
+  "Return the default configuration file path, computed at call time.
 
    This is a SUGGESTED path only - the library never loads this automatically.
    Users can pass any path to load-configuration-from-file, or set API keys
-   directly via make-provider or environment variables.")
+   directly via make-provider or environment variables."
+  (merge-pathnames "cl-llm-provider/config.lisp" (uiop:xdg-config-home)))
+
+(define-symbol-macro +default-config-file-path+ (default-config-file-path))
 
 ;;;; Configuration Loading (Opt-In Only)
 

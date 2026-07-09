@@ -27,72 +27,69 @@
   (get-model-metadata *anthropic-model-registry* model-name))
 
 (defmethod translate-tool-to-provider ((provider anthropic-provider) (tool tool-definition))
-  "Translate to Anthropic tool format."
-  (let ((result (make-hash-table :test 'equal))
-        (input-schema (make-hash-table :test 'equal)))
-
+  "Anthropic tool format: name/description/input_schema envelope."
+  (declare (ignore provider))
+  (let ((result (make-hash-table :test 'equal)))
     (setf (gethash "name" result) (tool-name tool))
     (setf (gethash "description" result) (tool-description tool))
-
-    ;; Build input schema
-    (setf (gethash "type" input-schema) "object")
-    (setf (gethash "properties" input-schema) (make-hash-table :test 'equal))
-
-    ;; Convert parameters
-    (dolist (param (tool-parameters tool))
-      (let* ((param-name (getf param :name))
-             (param-type (getf param :type))
-             (param-desc (getf param :description))
-             (param-enum (getf param :enum))
-             (param-items (getf param :items))
-             (param-spec (make-hash-table :test 'equal)))
-
-        (setf (gethash "type" param-spec)
-              (ecase param-type
-                (:string "string")
-                (:integer "integer")
-                (:number "number")
-                (:boolean "boolean")
-                (:array "array")
-                (:object "object")))
-
-        (when param-desc
-          (setf (gethash "description" param-spec) param-desc))
-
-        (when param-enum
-          (setf (gethash "enum" param-spec) param-enum))
-
-        ;; For array types, include items schema (required by some providers)
-        ;; Default to string items if not specified
-        (when (eq param-type :array)
-          (let ((items-spec (make-hash-table :test 'equal)))
-            (if param-items
-                ;; Use provided items spec (e.g., :items (:type :string))
-                (progn
-                  (setf (gethash "type" items-spec)
-                        (ecase (getf param-items :type)
-                          (:string "string")
-                          (:integer "integer")
-                          (:number "number")
-                          (:boolean "boolean")
-                          (:array "array")
-                          (:object "object")))
-                  (when (getf param-items :description)
-                    (setf (gethash "description" items-spec)
-                          (getf param-items :description))))
-                ;; Default: array of strings
-                (setf (gethash "type" items-spec) "string"))
-            (setf (gethash "items" param-spec) items-spec)))
-
-        (setf (gethash param-name (gethash "properties" input-schema))
-              param-spec)))
-
-    ;; Set required parameters
-    (when (tool-required-params tool)
-      (setf (gethash "required" input-schema) (tool-required-params tool)))
-
-    (setf (gethash "input_schema" result) input-schema)
+    (setf (gethash "input_schema" result) (parameter-specs-to-json-schema tool))
     result))
+
+(defun %tool-result-block (message)
+  "Build an Anthropic tool_result content-block plist from a role=\"tool\" MESSAGE."
+  (let ((block (list :type "tool_result"
+                     :tool-use-id (getf message :tool-call-id)
+                     :content (getf message :content))))
+    (if (getf message :is-error)
+        (append block (list :is-error t))
+        block)))
+
+(defmethod translate-message-to-provider ((provider anthropic-provider) message)
+  "Anthropic format: tool results are tool_result content blocks in a user message."
+  (if (equal (getf message :role) "tool")
+      (plist-to-hash (list :role "user"
+                           :content (list (%tool-result-block message))))
+      (call-next-method)))
+
+(defun %user-content-blocks (msg-hash)
+  "Return MSG-HASH's content as a list of content-block hash-tables."
+  (let ((content (gethash "content" msg-hash)))
+    (etypecase content
+      (string (list (plist-to-hash (list :type "text" :text content))))
+      (list content)
+      (vector (coerce content 'list)))))
+
+(defun %merge-consecutive-user-turns (wire-list)
+  "Merge adjacent role=\"user\" wire messages into one content-block message."
+  (let ((merged '()))
+    (dolist (msg wire-list (nreverse merged))
+      (let ((prev (first merged)))
+        (if (and prev
+                 (equal (gethash "role" prev) "user")
+                 (equal (gethash "role" msg) "user"))
+            (setf (gethash "content" prev)
+                  (append (%user-content-blocks prev)
+                          (%user-content-blocks msg)))
+            (push msg merged))))))
+
+(defun %anthropic-wire-messages (provider messages)
+  "Translate MESSAGES to Anthropic wire format with alternating turns."
+  (let ((wire '())
+        (pending-results '()))
+    (flet ((flush-results ()
+             (when pending-results
+               (push (plist-to-hash (list :role "user"
+                                          :content (nreverse pending-results)))
+                     wire)
+               (setf pending-results nil))))
+      (dolist (msg messages)
+        (if (equal (getf msg :role) "tool")
+            (push (%tool-result-block msg) pending-results)
+            (progn
+              (flush-results)
+              (push (translate-message-to-provider provider msg) wire))))
+      (flush-results))
+    (coerce (%merge-consecutive-user-turns (nreverse wire)) 'vector)))
 
 (defmethod send-completion-request ((provider anthropic-provider) messages
                                     &key model max-tokens temperature
@@ -116,7 +113,7 @@
 
         ;; Convert messages
         (setf (gethash "messages" body)
-              (map 'vector #'plist-to-hash messages))
+              (%anthropic-wire-messages provider messages))
 
         (when temperature
           (setf (gethash "temperature" body) temperature))
@@ -144,29 +141,8 @@
                 (yason:encode body s)))))
 
     ;; Make HTTP request (with timing)
-    (multiple-value-bind (response-body status-code)
-        (with-performance-timing (:api-time)
-          (handler-case
-              (dex:post url
-                        :headers headers
-                        :content encoded-body
-                        :force-string t)
-            (dex:http-request-failed (e)
-              (values (dex:response-body e) (dex:response-status e)))
-            (error (e)
-              (error 'provider-network-error
-                     :provider provider
-                     :url url
-                     :operation :completion
-                     :original-error e
-                     :message (format nil "Network error: ~A" e)))))
-
-      (if (and (>= status-code 200) (< status-code 300))
-          (yason:parse response-body)
-          (handle-http-error status-code
-                            (handler-case (yason:parse response-body)
-                              (error () response-body))
-                            provider)))))
+    (with-performance-timing (:api-time)
+      (provider-http-post provider url headers encoded-body :operation :completion))))
 
 (defmethod parse-completion-response ((provider anthropic-provider) raw-response
                                       &key performance)
@@ -243,7 +219,7 @@
       (setf (gethash "system" body) system))
 
     (setf (gethash "messages" body)
-          (map 'vector #'plist-to-hash messages))
+          (%anthropic-wire-messages provider messages))
 
     (when temperature
       (setf (gethash "temperature" body) temperature))
@@ -268,7 +244,8 @@
               (dex:post url
                         :headers headers
                         :content encoded-body
-                        :want-stream t)
+                        :want-stream t
+                        :read-timeout (getf (provider-options provider) :timeout 120))
             (if (and (>= status-code 200) (< status-code 300))
                 (make-instance 'completion-stream
                                :provider provider

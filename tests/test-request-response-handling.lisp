@@ -82,6 +82,24 @@
     (fiveam:is (string= "text" (gethash "type" (elt content 0))))
     (fiveam:is (hash-table-p (gethash "input" (elt content 1))))))
 
+(fiveam:test response-printable-when-partially-initialized
+  "Response print methods tolerate missing optional slots."
+  (fiveam:finishes
+    (prin1-to-string (make-instance 'cl-llm-provider:completion-response)))
+  (fiveam:finishes
+    (prin1-to-string (make-instance 'cl-llm-provider:embedding-response))))
+
+(fiveam:test json-keys-over-cap-stay-strings
+  "Very long provider JSON keys are preserved as strings instead of interned."
+  (let* ((key (make-string 129 :initial-element #\x))
+         (hash (make-hash-table :test 'equal)))
+    (setf (gethash key hash) 42)
+    (let ((plist (handler-bind
+                     ((cl-llm-provider:llm-provider-warning #'muffle-warning))
+                   (cl-llm-provider::%json-hash-to-keyword-plist hash))))
+      (fiveam:is (string= key (first plist)))
+      (fiveam:is (= 42 (second plist))))))
+
 
 ;;;; Anthropic Parser Tests
 
@@ -665,4 +683,3 @@ whose single choice carries MESSAGE-HASH."
 (fiveam:test performance-profiling-disabled-by-default
   "Performance profiling should be disabled by default"
   (fiveam:is (null *performance-profiling*)))
-

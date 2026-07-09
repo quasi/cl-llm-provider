@@ -9,6 +9,23 @@
 
 (fiveam:in-suite conditions-restarts-suite)
 
+(defclass failing-test-provider (openai-provider) ())
+(defclass working-test-provider (openai-provider) ())
+
+(defvar *fallback-test-calls* nil)
+
+(defmethod send-completion-request ((p failing-test-provider) messages
+                                    &key &allow-other-keys)
+  (declare (ignore messages))
+  (push :failing *fallback-test-calls*)
+  (error 'provider-api-error :provider p :message "down"))
+
+(defmethod send-completion-request ((p working-test-provider) messages
+                                    &key &allow-other-keys)
+  (declare (ignore messages))
+  (push :working *fallback-test-calls*)
+  (yason:parse "{\"id\":\"r1\",\"model\":\"m\",\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}"))
+
 ;;;; ============================================================
 ;;;; Section 1: New Condition Signal/Catch Tests
 ;;;; ============================================================
@@ -397,6 +414,17 @@
                       (error (e) (declare (ignore e)) :provider-supplied)))))
       (fiveam:is (eq :provider-supplied result)))))
 
+(fiveam:test use-provider-restart-accepts-keyword
+  "use-provider can supply a keyword provider designator without eval."
+  (let ((*default-provider* nil))
+    (handler-bind
+        ((provider-configuration-error
+          (lambda (e)
+            (declare (ignore e))
+            (invoke-restart 'use-provider :ollama))))
+      (let ((provider (%resolve-provider nil)))
+        (fiveam:is (typep provider 'ollama-provider))))))
+
 (fiveam:test restart-use-model
   "use-model restart allows supplying a model name"
   (let* ((*default-provider* (make-provider :ollama))
@@ -469,10 +497,23 @@
                   (mapcar #'restart-name (compute-restarts e)))
             ;; Must invoke a restart to avoid unwinding
             (invoke-restart (find-restart 'retry e)))))
-      (handle-http-error 429 "rate limited" (make-provider :ollama :model "test")))
+    (handle-http-error 429 "rate limited" (make-provider :ollama :model "test")))
     (fiveam:is (member 'wait-and-retry restarts-found))
     (fiveam:is (member 'retry restarts-found))
-    (fiveam:is (member 'use-fallback-provider restarts-found))))
+    ;; use-fallback-provider now lives at the COMPLETE/EMBEDDING/COMPLETE-STREAM
+    ;; level, where the whole request can actually be re-issued.
+    ))
+
+(fiveam:test handle-http-error-retry-returns-directive
+  "Invoking retry from handle-http-error returns the provider-http-post directive."
+  (let ((provider (make-instance 'openai-provider)))
+    (handler-bind
+        ((provider-rate-limit-error
+          (lambda (e)
+            (declare (ignore e))
+            (invoke-restart 'retry))))
+      (fiveam:is (eq :retry
+                     (handle-http-error 429 "slow down" provider))))))
 
 (fiveam:test restart-handle-http-error-401
   "handle-http-error establishes use-value restart for 401"
@@ -495,9 +536,48 @@
             (setf restarts-found
                   (mapcar #'restart-name (compute-restarts e)))
             (invoke-restart (find-restart 'retry e)))))
-      (handle-http-error 500 "internal error" (make-provider :ollama :model "test")))
+    (handle-http-error 500 "internal error" (make-provider :ollama :model "test")))
     (fiveam:is (member 'retry restarts-found))
-    (fiveam:is (member 'use-fallback-provider restarts-found))))
+    ;; use-fallback-provider now lives at the COMPLETE/EMBEDDING/COMPLETE-STREAM
+    ;; level, where the whole request can actually be re-issued.
+    ))
+
+(fiveam:test handle-http-error-generic-retry-returns-directive
+  "Generic API retry restarts also return the retry directive."
+  (let ((provider (make-instance 'openai-provider)))
+    (handler-bind
+        ((provider-api-error
+          (lambda (e)
+            (declare (ignore e))
+            (invoke-restart 'retry))))
+      (fiveam:is (eq :retry
+                     (handle-http-error 500 "boom" provider))))))
+
+(fiveam:test parse-retry-after-normalizes-strings
+  "retry-after hints are normalized before reaching sleep."
+  (let ((body (make-hash-table :test 'equal)))
+    (setf (gethash "retry_after" body) "30")
+    (fiveam:is (= 30 (parse-retry-after body)))
+    (setf (gethash "retry_after" body) 15)
+    (fiveam:is (= 15 (parse-retry-after body)))
+    (setf (gethash "retry_after" body) '(:junk))
+    (fiveam:is (null (parse-retry-after body)))))
+
+(fiveam:test use-fallback-provider-reissues-request
+  "use-fallback-provider re-issues COMPLETE against the supplied provider."
+  (setf *fallback-test-calls* nil)
+  (let ((failing (make-instance 'failing-test-provider :model "m"))
+        (working (make-instance 'working-test-provider :model "m")))
+    (handler-bind
+        ((provider-api-error
+          (lambda (e)
+            (declare (ignore e))
+            (invoke-restart 'use-fallback-provider working))))
+      (let ((response (complete '((:role "user" :content "hi"))
+                                :provider failing
+                                :model "m")))
+        (fiveam:is (string= "ok" (response-content response)))
+        (fiveam:is (equal '(:working :failing) *fallback-test-calls*))))))
 
 ;;; 4.3 tools.lisp restarts: skip-validation, use-value
 
@@ -684,6 +764,23 @@
     (fiveam:is (> wait 0))
     (fiveam:is (< wait 2.0))))
 
+(fiveam:test make-retry-handler-invokes-retry-without-restart-sleep
+  "make-retry-handler prefers the retry restart after doing its own wait."
+  (let ((handler (make-retry-handler
+                  :max-retries 1
+                  :backoff-fn (lambda (attempt)
+                                (declare (ignore attempt))
+                                0)))
+        (invoked nil))
+    (restart-case
+        (progn
+          (funcall handler
+                   (make-condition 'provider-network-error :message "test"))
+          nil)
+      (retry ()
+        (setf invoked t)))
+    (fiveam:is (eq t invoked))))
+
 (fiveam:test available-recovery-options-returns-plists
   "available-recovery-options returns structured restart data"
   (let ((options nil))
@@ -725,6 +822,14 @@
                :status-code 429
                :message "rate limited")))
     (fiveam:is (= 3 attempt))))  ; 1 initial + 2 retries
+
+(fiveam:test with-auto-recovery-does-not-capture-block-names
+  "with-auto-recovery uses hygienic block/tag names."
+  (fiveam:is (eq :escaped
+                 (block auto-recovery
+                   (with-auto-recovery ()
+                     (return-from auto-recovery :escaped))
+                   :not-escaped))))
 
 (fiveam:test with-auto-recovery-skips-non-transient
   "with-auto-recovery does not retry non-transient errors"
@@ -772,6 +877,14 @@
     (fiveam:is (>= attempt 3))
     (fiveam:is (member "primary" providers-tried :test #'string=))
     (fiveam:is (member "fallback1" providers-tried :test #'string=))))
+
+(fiveam:test api-error-report-names-gemini
+  "provider-api-error reports use provider-name, including Gemini."
+  (let ((condition (make-condition 'provider-api-error
+                                   :provider (make-instance 'gemini-provider)
+                                   :status-code 500
+                                   :message "boom")))
+    (fiveam:is (search "Google Gemini" (princ-to-string condition)))))
 
 ;;;; ============================================================
 ;;;; Section 6: Telos Integration Tests

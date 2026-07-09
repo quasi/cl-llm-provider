@@ -45,22 +45,23 @@ Send a completion request to an LLM.
 Get vector embeddings for text.
 
 ```lisp
-(embedding texts &key provider model)
-→ vector or list of vectors
+(embedding texts &key provider model dimensions)
+→ embedding-response
 ```
 
 **Parameters**:
 - `texts` (string or list) - Text(s) to embed
 - `:provider` (provider) - Provider instance
 - `:model` (string) - Model override
+- `:dimensions` (integer) - Requested output dimensions, when supported by the provider
 
-**Returns**: Single vector (list of floats) or list of vectors
+**Returns**: `embedding-response`; use `(response-embeddings response)` for vectors
 
 **Example**:
 ```lisp
-(let ((embedding (embedding "The quick brown fox"
+(let ((response (embedding "The quick brown fox"
                            :provider (make-provider :openai))))
-  (length embedding))  ; Vector length
+  (length (first (response-embeddings response))))  ; Vector length
 ```
 
 ### `token-count`
@@ -226,10 +227,19 @@ List all registered tools.
 
 ### `execute-tool`
 
-Execute a tool by name.
+Execute a resolved tool definition for a model-requested tool call.
 
 ```lisp
-(execute-tool name arguments) → result
+(execute-tool tool tool-call &key registry skip-approval skip-validation
+                            approval-callback max-safety-level)
+→ result
+```
+
+For completion responses containing multiple tool calls, use:
+
+```lisp
+(execute-tool-calls response &key registry approval-callback max-safety-level)
+→ list of (tool-call . result)
 ```
 
 ---
@@ -244,7 +254,7 @@ Result from `complete`.
 - `(response-id response)` - Response ID
 - `(response-model response)` - Model used
 - `(response-content response)` - Text content
-- `(response-message response)` - Full message (role + content)
+- `(response-message response)` - Full assistant message for continuation; Anthropic tool-use responses carry content-block plists
 - `(response-tool-calls response)` - List of tool calls (if any)
 - `(response-finish-reason response)` - Why it stopped (`:stop`, `:length`, etc.)
 - `(response-token-count response)` - Tokens used
@@ -259,7 +269,7 @@ Result from `complete`.
   (format t "Tokens: ~A~%" (response-token-count response))
   (when (response-tool-calls response)
     (dolist (call (response-tool-calls response))
-      (format t "Tool: ~A~%" (getf call :name)))))
+      (format t "Tool: ~A~%" (tool-call-name call)))))
 ```
 
 ### Tool Response Objects

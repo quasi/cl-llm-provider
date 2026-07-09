@@ -110,8 +110,10 @@
   (let* ((name (tool-name tool))
          (existing (gethash name (registry-tools registry))))
     (when (and existing (not replace))
-      (error "Tool ~S already registered in registry ~S. Use :replace t to overwrite."
-             name (registry-name registry)))
+      (error 'tool-registration-error
+             :tool-name name
+             :message (format nil "Tool ~S already registered in registry ~S. Use :replace t to overwrite."
+                              name (registry-name registry))))
     (setf (gethash name (registry-tools registry)) tool)
     tool))
 

@@ -65,6 +65,14 @@
   (fiveam:is (equal '(:event . "message_stop")
              (cl-llm-provider::parse-sse-line "event: message_stop"))))
 
+(fiveam:test sse-unknown-fields-not-interned
+  "Unknown SSE fields are ignored instead of interning arbitrary wire data."
+  (fiveam:is (null (cl-llm-provider::parse-sse-line "x-user-field: value")))
+  (fiveam:is (equal '(:id . "evt-1")
+             (cl-llm-provider::parse-sse-line "id: evt-1")))
+  (fiveam:is (equal '(:retry . "1000")
+             (cl-llm-provider::parse-sse-line "retry: 1000"))))
+
 (fiveam:test parse-openai-stream-chunk
   "Test OpenAI streaming chunk parsing"
   (let* ((raw-data "{\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}")
@@ -88,6 +96,24 @@
   "Test OpenAI streaming chunk with empty/nil data"
   (fiveam:is (null (cl-llm-provider::parse-openai-stream-data "" 0)))
   (fiveam:is (null (cl-llm-provider::parse-openai-stream-data nil 0))))
+
+(fiveam:test openai-stream-accumulates-tool-call-deltas
+  "OpenAI tool_call deltas are accumulated into complete tool calls."
+  (let* ((stream (make-instance 'cl-llm-provider::completion-stream
+                                :provider nil
+                                :model "gpt-test"))
+         (start (cl-llm-provider::parse-openai-stream-data
+                 "{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"add\",\"arguments\":\"{\\\"a\\\":\"}}]}}]}"
+                 0))
+         (finish (cl-llm-provider::parse-openai-stream-data
+                  "{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"2}\"}}]}}]}"
+                  1)))
+    (cl-llm-provider::%accumulate-tool-call-delta stream start)
+    (cl-llm-provider::%accumulate-tool-call-delta stream finish)
+    (let ((call (first (cl-llm-provider:stream-tool-calls stream))))
+      (fiveam:is (string= "call_1" (cl-llm-provider:tool-call-id call)))
+      (fiveam:is (string= "add" (cl-llm-provider:tool-call-name call)))
+      (fiveam:is (= 2 (getf (cl-llm-provider:tool-call-arguments call) :a))))))
 
 ;;; Task 1.5: Anthropic Stream Parser
 
@@ -124,6 +150,30 @@
          (data "{\"type\":\"ping\"}")
          (result (cl-llm-provider::parse-anthropic-stream-event event-type data 0)))
     (fiveam:is (null result))))
+
+(fiveam:test anthropic-stream-accumulates-tool-use
+  "Anthropic tool_use start and input_json_delta events form complete tool calls."
+  (let* ((stream (make-instance 'cl-llm-provider::completion-stream
+                                :provider nil
+                                :model "claude-test"))
+         (start (cl-llm-provider::parse-anthropic-stream-event
+                 "content_block_start"
+                 "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"lookup\",\"input\":{}}}"
+                 0))
+         (delta1 (cl-llm-provider::parse-anthropic-stream-event
+                  "content_block_delta"
+                  "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"city\\\":\"}}"
+                  1))
+         (delta2 (cl-llm-provider::parse-anthropic-stream-event
+                  "content_block_delta"
+                  "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\\\"Pune\\\"}\"}}"
+                  2)))
+    (dolist (chunk (list start delta1 delta2))
+      (cl-llm-provider::%accumulate-tool-call-delta stream chunk))
+    (let ((call (first (cl-llm-provider:stream-tool-calls stream))))
+      (fiveam:is (string= "toolu_1" (cl-llm-provider:tool-call-id call)))
+      (fiveam:is (string= "lookup" (cl-llm-provider:tool-call-name call)))
+      (fiveam:is (string= "Pune" (getf (cl-llm-provider:tool-call-arguments call) :city))))))
 
 (fiveam:test parse-anthropic-stream-event-metadata-events
   "Test Anthropic metadata events (message_start, content_block_start, content_block_stop) return nil"
@@ -201,4 +251,3 @@
     ;; We can't test real streaming without network,
     ;; but we can test the callback mechanism with a mock
     (fiveam:is (functionp #'cl-llm-provider:complete-stream))))
-

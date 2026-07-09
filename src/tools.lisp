@@ -118,10 +118,12 @@ Example:
                       (list result))))"
   (:feature tool-calling)
   (:purpose "Create tool result message for LLM conversation continuation")
-  (list :role "tool"
-        :tool-call-id tool-call-id
-        :content result
-        :is-error is-error))
+  (let ((msg (list :role "tool"
+                   :tool-call-id tool-call-id
+                   :content result)))
+    (if is-error
+        (append msg (list :is-error t))
+        msg)))
 
 ;;;; Internal Tool Validation
 

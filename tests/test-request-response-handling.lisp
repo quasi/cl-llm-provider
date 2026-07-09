@@ -45,6 +45,43 @@
     (fiveam:is (string= (getf (second messages) :role) "user"))
     (fiveam:is (string= (getf (third messages) :role) "assistant"))))
 
+
+;;;; Recursive plist-to-hash Tests
+
+(fiveam:test plist-to-hash-recursive-round-trip
+  "Nested tool-call plists must encode as JSON objects, not arrays."
+  (let* ((msg '(:role "assistant"
+                :content nil
+                :tool-calls ((:id "call_1"
+                              :type "function"
+                              :function (:name "get_weather"
+                                         :arguments "{\"location\":\"Paris\"}")))))
+         (hash (cl-llm-provider::plist-to-hash msg)))
+    ;; Verify the structure is JSON-encodable (nested plists -> hash-tables)
+    (fiveam:is (hash-table-p hash))
+    (fiveam:is (string= "assistant" (gethash "role" hash)))
+    ;; tool-calls should be a vector (array) of hash-tables, not nested plists
+    (let ((tool-calls (gethash "tool_calls" hash)))
+      (fiveam:is (vectorp tool-calls))
+      (let ((tc (elt tool-calls 0)))
+        (fiveam:is (hash-table-p tc))
+        (fiveam:is (string= "call_1" (gethash "id" tc)))
+        (let ((fn (gethash "function" tc)))
+          (fiveam:is (hash-table-p fn))
+          (fiveam:is (string= "get_weather" (gethash "name" fn))))))))
+
+(fiveam:test plist-to-hash-nested-content-blocks
+  "A list of content-block plists becomes a JSON array of objects."
+  (let* ((msg '(:role "assistant"
+                :content ((:type "text" :text "Checking...")
+                          (:type "tool-use" :id "toolu_1" :name "f" :input (:x 1)))))
+         (hash (cl-llm-provider::plist-to-hash msg))
+         (content (gethash "content" hash)))
+    (fiveam:is (vectorp content))
+    (fiveam:is (hash-table-p (elt content 0)))
+    (fiveam:is (string= "text" (gethash "type" (elt content 0))))
+    (fiveam:is (hash-table-p (gethash "input" (elt content 1))))))
+
 ;;;; System Message Handling Tests
 
 (fiveam:test system-message-as-separate-parameter

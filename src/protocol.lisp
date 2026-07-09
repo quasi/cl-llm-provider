@@ -344,22 +344,30 @@ Displays timing breakdown or 'not recorded' for each metric when profiling was d
 
 ;;;; HTTP Request Helpers
 
-(defun/i plist-to-hash (plist &key (test 'equal))
-  "Convert a plist to a hash table with string keys.
-Keywords like :role become \"role\", :tool-call-id becomes \"tool_call_id\".
-Preserving string keys as-is."
-  (:feature http-transport)
-  (:purpose "Convert CL plists to JSON-compatible hash tables for API requests")
-  (let ((hash (make-hash-table :test test)))
-    (loop for (key value) on plist by #'cddr
-          for string-key = (etypecase key
-                            (keyword
-                             ;; Convert hyphens to underscores for JSON compatibility
-                             (substitute #\_ #\-
-                                        (string-downcase (symbol-name key))))
-                            (string key))
-          do (setf (gethash string-key hash) value))
-    hash))
+(defun plist-to-hash (plist &key (test 'equal))
+  "Convert a plist to a hash table with string keys, recursively.
+Keywords like :role become \"role\", :tool-call-id becomes \"tool_call_id\";
+string keys are preserved as-is. Values that are keyword plists become nested
+hash-tables; other lists become vectors. Inverse of %json-hash-to-keyword-plist."
+  (labels ((json-plist-p (value)
+             "Check if value is a keyword plist."
+             (and (consp value) (keywordp (first value))))
+           (lisp-to-json-value (value)
+             "Recursively convert Lisp value to JSON-encodable structure."
+             (cond
+               ((json-plist-p value) (plist-to-hash value))
+               ((consp value) (map 'vector #'lisp-to-json-value value))
+               (t value))))
+    (let ((hash (make-hash-table :test test)))
+      (loop for (key value) on plist by #'cddr
+            for string-key = (etypecase key
+                              (keyword
+                               ;; Convert hyphens to underscores for JSON compatibility
+                               (substitute #\_ #\-
+                                          (string-downcase (symbol-name key))))
+                              (string key))
+            do (setf (gethash string-key hash) (lisp-to-json-value value)))
+      hash)))
 
 (defun/i make-http-headers (provider &key content-type additional-headers)
   "Build HTTP headers for PROVIDER request.

@@ -112,9 +112,10 @@
 (defmethod parse-completion-response ((provider ollama-provider) raw-response
                                       &key performance)
   (let* ((message (gethash "message" raw-response))
-         (content (gethash "content" message))
-         (thinking (gethash "thinking" message))  ; Reasoning trace for models like DeepSeek-R1
-         (role (gethash "role" message))
+         ;; guard: message may be NIL
+         (content (when message (gethash "content" message)))
+         (thinking (when message (gethash "thinking" message)))  ; Reasoning trace for models like DeepSeek-R1
+         (role (when message (gethash "role" message)))
          ;; Combine thinking and content if both present
          (full-content (cond
                          ((and thinking content)
@@ -122,7 +123,7 @@
                          (thinking thinking)
                          (content content)
                          (t "")))
-         (tool-calls-raw (gethash "tool_calls" message))
+         (tool-calls-raw (when message (gethash "tool_calls" message)))
          (tool-calls (when tool-calls-raw
                       (loop for tc in (coerce tool-calls-raw 'list)
                             for function = (gethash "function" tc)

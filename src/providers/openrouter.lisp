@@ -102,13 +102,14 @@
 (defmethod parse-completion-response ((provider openrouter-provider) raw-response
                                       &key performance)
   (let* ((choices (gethash "choices" raw-response))
+         ;; guard: first-choice may be NIL (empty choices)
          (first-choice (when (and choices (> (length choices) 0))
                         (elt choices 0)))
-         (message (gethash "message" first-choice))
-         (content (gethash "content" message))
-         (finish-reason (gethash "finish_reason" first-choice))
+         (message (when first-choice (gethash "message" first-choice)))
+         (content (when message (gethash "content" message)))
+         (finish-reason (when first-choice (gethash "finish_reason" first-choice)))
          (usage (gethash "usage" raw-response))
-         (tool-calls-raw (gethash "tool_calls" message))
+         (tool-calls-raw (when message (gethash "tool_calls" message)))
          (tool-calls (when tool-calls-raw
                       (parse-tool-calls provider raw-response))))
 
@@ -118,7 +119,8 @@
                    :content content
                    :message (%json-hash-to-keyword-plist message)
                    :tool-calls tool-calls
-                   :finish-reason (intern (string-upcase finish-reason) :keyword)
+                   :finish-reason (when finish-reason
+                                    (intern (string-upcase finish-reason) :keyword))
                    :usage (when usage
                             (list :prompt-tokens (or (gethash "prompt_tokens" usage) 0)
                                   :completion-tokens (or (gethash "completion_tokens" usage) 0)

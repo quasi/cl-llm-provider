@@ -121,6 +121,33 @@
     (fiveam:is (null (cl-llm-provider::response-finish-reason resp)))
     (fiveam:is (null (cl-llm-provider::response-content resp)))))
 
+;;;; OpenAI-format Parser Nil Guard Tests
+
+(fiveam:test openai-format-parsers-tolerate-sparse-responses
+  "Empty choices / missing finish_reason must not crash any OpenAI-format parser."
+  (dolist (class '(cl-llm-provider::openai-provider
+                   cl-llm-provider::gemini-provider
+                   cl-llm-provider::openrouter-provider))
+    (let ((provider (make-instance class)))
+      ;; Empty choices
+      (fiveam:finishes
+        (cl-llm-provider::parse-completion-response
+         provider (yason:parse "{\"id\":\"x\",\"model\":\"m\",\"choices\":[]}")))
+      ;; Missing finish_reason
+      (let ((resp (cl-llm-provider::parse-completion-response
+                   provider
+                   (yason:parse "{\"id\":\"x\",\"model\":\"m\",
+\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"hi\"}}]}"))))
+        (fiveam:is (null (cl-llm-provider::response-finish-reason resp)))
+        (fiveam:is (string= "hi" (cl-llm-provider::response-content resp)))))))
+
+(fiveam:test ollama-parser-tolerates-missing-message
+  "Ollama parser should handle missing message field."
+  (let ((provider (make-instance 'cl-llm-provider::ollama-provider)))
+    (fiveam:finishes
+      (cl-llm-provider::parse-completion-response
+       provider (yason:parse "{\"model\":\"m\",\"done\":true}")))))
+
 ;;;; System Message Handling Tests
 
 (fiveam:test system-message-as-separate-parameter

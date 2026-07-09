@@ -82,6 +82,45 @@
     (fiveam:is (string= "text" (gethash "type" (elt content 0))))
     (fiveam:is (hash-table-p (gethash "input" (elt content 1))))))
 
+
+;;;; Anthropic Parser Tests
+
+(fiveam:test anthropic-parse-tool-use-message-is-plist
+  "Anthropic :message slot must be a pure keyword plist mirroring content blocks."
+  (let* ((provider (make-instance 'cl-llm-provider::anthropic-provider))
+         (raw (yason:parse "{\"id\":\"msg_1\",\"model\":\"claude-x\",
+\"stop_reason\":\"tool_use\",
+\"content\":[{\"type\":\"text\",\"text\":\"Let me check.\"},
+             {\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"get_weather\",
+              \"input\":{\"location\":\"Pune\"}}],
+\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}"))
+         (resp (cl-llm-provider::parse-completion-response provider raw))
+         (msg (cl-llm-provider::response-message resp)))
+    ;; Message structure: :role "assistant" and :content as list of keyword plists
+    (fiveam:is (string= "assistant" (getf msg :role)))
+    (let ((blocks (getf msg :content)))
+      (fiveam:is (listp blocks))
+      (fiveam:is (= 2 (length blocks)))
+      ;; First block is text
+      (fiveam:is (string= "text" (getf (first blocks) :type)))
+      (fiveam:is (string= "Let me check." (getf (first blocks) :text)))
+      ;; Second block is tool_use
+      (fiveam:is (string= "tool_use" (getf (second blocks) :type)))
+      (fiveam:is (string= "toolu_1" (getf (second blocks) :id))))
+    ;; Text content is preserved
+    (fiveam:is (string= "Let me check." (cl-llm-provider::response-content resp)))
+    ;; Tool calls are extracted
+    (fiveam:is (= 1 (length (cl-llm-provider::response-tool-calls resp))))))
+
+
+(fiveam:test anthropic-parse-empty-content-no-crash
+  "Empty content should not crash the parser."
+  (let* ((provider (make-instance 'cl-llm-provider::anthropic-provider))
+         (raw (yason:parse "{\"id\":\"msg_2\",\"model\":\"claude-x\",\"content\":[]}"))
+         (resp (cl-llm-provider::parse-completion-response provider raw)))
+    (fiveam:is (null (cl-llm-provider::response-finish-reason resp)))
+    (fiveam:is (null (cl-llm-provider::response-content resp)))))
+
 ;;;; System Message Handling Tests
 
 (fiveam:test system-message-as-separate-parameter

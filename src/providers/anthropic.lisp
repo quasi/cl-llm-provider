@@ -171,55 +171,47 @@
 (defmethod parse-completion-response ((provider anthropic-provider) raw-response
                                       &key performance)
   (let* ((content-blocks (gethash "content" raw-response))
-         (first-block (when (and content-blocks (> (length content-blocks) 0))
-                       (elt content-blocks 0)))
-         (content-type (gethash "type" first-block))
-         (text-content (when (string= content-type "text")
-                        (gethash "text" first-block)))
+         (text-content
+           (let ((texts (loop for block in (coerce (or content-blocks #()) 'list)
+                              when (string= (gethash "type" block) "text")
+                              collect (gethash "text" block))))
+             (when texts
+               (format nil "~{~A~}" texts))))
          (finish-reason (gethash "stop_reason" raw-response))
          (usage (gethash "usage" raw-response))
-         (tool-calls nil))
-
-    ;; Parse tool uses from content blocks
-    (loop for block in (coerce content-blocks 'list)
-          for block-type = (gethash "type" block)
-          when (string= block-type "tool_use")
-          collect (make-instance 'tool-call
-                                 :id (gethash "id" block)
-                                 :name (gethash "name" block)
-                                 :arguments (gethash "input" block))
-          into calls
-          finally (setf tool-calls calls))
-
-    ;; Build message for conversation continuation
-    (let ((message (list :role "assistant")))
-      (if tool-calls
-          (setf (getf message :tool-calls) tool-calls)
-          (setf (getf message :content) text-content))
-
-      (make-instance 'completion-response
-                     :id (gethash "id" raw-response)
-                     :model (gethash "model" raw-response)
-                     :content text-content
-                     :message message
-                     :tool-calls tool-calls
-                     :finish-reason (intern (string-upcase finish-reason) :keyword)
-                     :usage (when usage
-                              (let ((in (or (gethash "input_tokens" usage) 0))
-                                    (out (or (gethash "output_tokens" usage) 0)))
-                                (list :prompt-tokens in
-                                      :completion-tokens out
-                                      :total-tokens (+ in out))))
-                     :raw raw-response
-                     :performance performance
-                     :metadata (let ((metadata nil))
-                                ;; Provider introspection
-                                (setf (getf metadata :provider-type) (provider-type provider))
-                                (setf (getf metadata :provider-name) (provider-name provider))
-                                ;; Extract stop sequence if present
-                                (when-let ((stop-seq (gethash "stop_sequence" raw-response)))
-                                  (setf (getf metadata :stop-sequence) stop-seq))
-                                metadata)))))
+         (tool-calls
+           (loop for block in (coerce (or content-blocks #()) 'list)
+                 when (string= (gethash "type" block) "tool_use")
+                 collect (make-instance 'tool-call
+                                        :id (gethash "id" block)
+                                        :name (gethash "name" block)
+                                        :arguments (gethash "input" block)))))
+    (make-instance 'completion-response
+                   :id (gethash "id" raw-response)
+                   :model (gethash "model" raw-response)
+                   :content text-content
+                   ;; Message mirrors the raw content blocks so it can be echoed
+                   ;; back to the API for conversation continuation (tool loops).
+                   :message (list :role "assistant"
+                                  :content (loop for block in (coerce (or content-blocks #()) 'list)
+                                                 collect (%json-hash-to-keyword-plist block)))
+                   :tool-calls tool-calls
+                   :finish-reason (when finish-reason
+                                    (intern (string-upcase finish-reason) :keyword))
+                   :usage (when usage
+                            (let ((in (or (gethash "input_tokens" usage) 0))
+                                  (out (or (gethash "output_tokens" usage) 0)))
+                              (list :prompt-tokens in
+                                    :completion-tokens out
+                                    :total-tokens (+ in out))))
+                   :raw raw-response
+                   :performance performance
+                   :metadata (let ((metadata nil))
+                               (setf (getf metadata :provider-type) (provider-type provider))
+                               (setf (getf metadata :provider-name) (provider-name provider))
+                               (when-let ((stop-seq (gethash "stop_sequence" raw-response)))
+                                 (setf (getf metadata :stop-sequence) stop-seq))
+                               metadata))))
 
 (defmethod parse-tool-calls ((provider anthropic-provider) raw-response)
   "Parse Anthropic-style tool uses from content blocks."

@@ -52,8 +52,14 @@
   :purpose "Tool definition, validation, translation, and execution"
   :belongs-to llm-provider
   :goals ((:safe "Tools classified by safety level with approval gates")
-          (:validated "Parameters validated before execution"))
-  :failure-modes ((:schema-invalid "Tool definition malformed")
+          (:validated "Parameters validated before execution")
+          (:stable-safety-contract
+           "Safety levels are exactly :safe, :moderate, and :dangerous; only :safe denotes read-only behavior")
+          (:fail-closed-classification
+           "Consumers treat every non-:safe value, including an unrecognized value, as effectful"))
+  :failure-modes ((:safety-underclassification
+                   "A non-:safe or unrecognized safety level is treated as read-only, bypassing effect metering or approval")
+                  (:schema-invalid "Tool definition malformed")
                   (:handler-missing "Tool has no execution handler")
                   (:execution-error "Handler raises during execution")))
 

@@ -900,6 +900,14 @@
       (fiveam:is (member name features :test #'string=)
                  (format nil "Feature ~A should exist" name)))))
 
+(fiveam:test tool-calling-feature-symbol-is-shared
+  "Tool declarations in both packages refer to the defined feature symbol."
+  (multiple-value-bind (tools-symbol status)
+      (find-symbol "TOOL-CALLING" :cl-llm-provider.tools)
+    (fiveam:is (eq status :inherited))
+    (fiveam:is (eq tools-symbol 'cl-llm-provider:tool-calling))
+    (fiveam:is (member tools-symbol (telos:list-features) :test #'eq))))
+
 (fiveam:test telos-intent-on-complete
   "complete function has telos intent"
   (let ((intent (telos:get-intent 'cl-llm-provider:complete)))

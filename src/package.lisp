@@ -39,6 +39,7 @@
    #:stream-tool-calls
 
    ;; Tool calling
+   #:tool-calling
    #:define-tool
    #:tool-calls
    #:make-tool-result

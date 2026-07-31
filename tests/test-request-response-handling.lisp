@@ -683,3 +683,61 @@ whose single choice carries MESSAGE-HASH."
 (fiveam:test performance-profiling-disabled-by-default
   "Performance profiling should be disabled by default"
   (fiveam:is (null *performance-profiling*)))
+
+;;;; tool_choice Serialization Tests
+;;;; Named (string) tool choices must serialize as a structured object.
+;;;; A bare string is rejected by OpenAI-format APIs:
+;;;;   400 Invalid value: 'extract'. Supported values are: 'none', 'auto', 'required'.
+
+(defun %capture-request-body (provider &rest completion-args)
+  "Run SEND-COMPLETION-REQUEST with the HTTP layer stubbed out.
+Returns the parsed JSON request body (a hash-table)."
+  (let ((captured nil)
+        (original (fdefinition 'cl-llm-provider::provider-http-post)))
+    (unwind-protect
+         (progn
+           (setf (fdefinition 'cl-llm-provider::provider-http-post)
+                 (lambda (provider url headers content &key operation)
+                   (declare (ignore provider url headers operation))
+                   (setf captured content)
+                   (make-hash-table :test 'equal)))
+           (apply #'send-completion-request provider
+                  '((:role "user" :content "hi"))
+                  completion-args))
+      (setf (fdefinition 'cl-llm-provider::provider-http-post) original))
+    (yason:parse captured)))
+
+(defun %tool-choice-in-body (provider-type)
+  (gethash "tool_choice"
+           (%capture-request-body (make-provider provider-type :api-key "test-key")
+                                  :model "test-model"
+                                  :tool-choice "extract")))
+
+(fiveam:test openai-named-tool-choice-is-structured
+  "String tool-choice must encode as an object, not a bare string (OpenAI)"
+  (let ((tc (%tool-choice-in-body :openai)))
+    (fiveam:is (hash-table-p tc))
+    (fiveam:is (string= "function" (gethash "type" tc)))
+    (fiveam:is (string= "extract" (gethash "name" (gethash "function" tc))))))
+
+(fiveam:test gemini-named-tool-choice-is-structured
+  "String tool-choice must encode as an object, not a bare string (Gemini)"
+  (let ((tc (%tool-choice-in-body :gemini)))
+    (fiveam:is (hash-table-p tc))
+    (fiveam:is (string= "function" (gethash "type" tc)))
+    (fiveam:is (string= "extract" (gethash "name" (gethash "function" tc))))))
+
+(fiveam:test openrouter-named-tool-choice-is-structured
+  "String tool-choice must encode as an object, not a bare string (OpenRouter)"
+  (let ((tc (%tool-choice-in-body :openrouter)))
+    (fiveam:is (hash-table-p tc))
+    (fiveam:is (string= "function" (gethash "type" tc)))
+    (fiveam:is (string= "extract" (gethash "name" (gethash "function" tc))))))
+
+(fiveam:test keyword-tool-choice-stays-a-string
+  "Keyword tool-choice (:auto/:none/:required) still encodes as a bare string"
+  (dolist (type '(:openai :gemini :openrouter))
+    (let ((body (%capture-request-body (make-provider type :api-key "test-key")
+                                       :model "test-model"
+                                       :tool-choice :required)))
+      (fiveam:is (string= "required" (gethash "tool_choice" body))))))

@@ -91,6 +91,15 @@ Full 15 rules, 7 invariants: `.claude/skills/integration/references/core-spec.md
 3. Integration tests — multi-turn conversations, tool calling
 4. Error recovery tests — condition signaling, restart handling
 
+The suite stubs `provider-http-post`, so it verifies the JSON we *emit*, never
+that a provider *accepts* it. Wire-format changes need a live check.
+
+**Live checks** — `tests/live/`, excluded from the ASDF test-op. They hit real
+endpoints and spend real tokens; run them by hand when changing request
+serialization. Each file documents its own invocation. A missing key reports as
+`Provider configuration error: missing <VAR>` — a config miss, not a code
+failure.
+
 ## Code Review Checklist
 
 - [ ] All 15 normative rules satisfied

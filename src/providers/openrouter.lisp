@@ -68,7 +68,10 @@
           (setf (gethash "tool_choice" body)
                 (etypecase tool-choice
                   (keyword (string-downcase (symbol-name tool-choice)))
-                  (string tool-choice))))
+                  ;; A named function must be a structured object; a bare
+                  ;; string is rejected (only none/auto/required are valid).
+                  (string (plist-to-hash (list :type "function"
+                                               :function (list :name tool-choice)))))))
 
         ;; Encode to JSON
         (setf encoded-body

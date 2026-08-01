@@ -72,10 +72,14 @@
   (when registry
     (let ((hooks (registry-global-hooks registry)))
       (when-let ((hook (getf hooks hook-type)))
-        (safely-invoke-hook hook tool-call (first args) (second args)
-                            :on-error (lambda (e)
-                                        (warn "Error in global ~A hook: ~A"
-                                              hook-type e)))))))
+        (let ((on-error (lambda (e)
+                          (warn "Error in global ~A hook: ~A" hook-type e))))
+          (ecase hook-type
+            (:on-start
+             (safely-invoke-hook hook tool-call (first args) :on-error on-error))
+            ((:on-complete :on-error)
+             (safely-invoke-hook hook tool-call (first args) (second args)
+                                 :on-error on-error))))))))
 
 ;;;; Hook Helper Functions
 

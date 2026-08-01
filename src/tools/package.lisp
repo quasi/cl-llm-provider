@@ -77,4 +77,5 @@
    #:context-approval-status
    #:context-edited-arguments
    #:execute-tool
-   #:execute-tool-calls))
+   #:execute-tool-calls
+   #:execution-results-to-tool-messages))

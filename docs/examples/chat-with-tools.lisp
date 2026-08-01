@@ -11,6 +11,10 @@
 (ql:quickload :cl-llm-provider :silent t)
 (ql:quickload :cl-ppcre :silent t)
 
+;; cl-llm-provider exports RETRY (for handler-bind/invoke-restart use), which
+;; collides with SB-EXT:RETRY already visible in a fresh CL-USER on SBCL.
+;; shadowing-import resolves it before use-package pulls in the rest.
+(shadowing-import 'cl-llm-provider:retry)
 (use-package :cl-llm-provider)
 (use-package :cl-llm-provider.tools)
 
@@ -117,7 +121,7 @@
      :required '("query")
      :safety-level :safe
      :categories '(:search :external-api)
-     :parameter-validators '(("query" . (:length-validator :min-length 1 :max-length 200))
+     :parameter-validators '(("query" . (:min-length 1 :max-length 200))
                              ("max-results" . (:type :integer :min 1 :max 50)))
      :handler (lambda (args)
                (format nil "Search results for: ~A (~A results)"
@@ -133,8 +137,8 @@
      :required '("location")
      :safety-level :safe
      :categories '(:search :external-api)
-     :parameter-validators '(("location" . (:length-validator :min-length 2 :max-length 100))
-                             ("unit" . (:enum-validator '("celsius" "fahrenheit"))))
+     :parameter-validators '(("location" . (:min-length 2 :max-length 100))
+                             ("unit" . (:enum ("celsius" "fahrenheit"))))
      :handler (lambda (args)
                (format nil "Weather for ~A: Sunny, 22°C"
                        (getf args :location))))
@@ -210,18 +214,24 @@
 
 (defun add-message (session role content)
   "Add a message to the session history"
-  (push `(:role ,role :content ,content) (session-messages session)))
+  (push (list :role role :content content) (session-messages session)))
+
+(defun add-raw-message (session message)
+  "Add a fully-formed message plist (e.g. response-message, or a message
+   from execution-results-to-tool-messages) directly to session history.
+   Unlike add-message, this preserves fields like :tool-call-id that a
+   role/content pair can't carry, which is required for the provider to
+   correlate a tool_result with the tool_use that requested it."
+  (push message (session-messages session)))
 
 (defun get-conversation-history (session)
   "Get conversation history (in correct order)"
   (reverse (session-messages session)))
 
-(defun chat (session user-message)
-  "Send a message and get a response with enhanced tool support"
-  ;; Add user message to history
-  (add-message session "user" user-message)
-
-  ;; Get conversation history
+(defun respond (session)
+  "Request a completion for the session's current history, then either
+   return the model's text answer or execute requested tool calls and
+   recurse until the model gives a final answer."
   (let ((history (get-conversation-history session))
         (registry (session-tool-registry session)))
 
@@ -254,15 +264,18 @@
                                                        :skip-approval t))
                     (tool-messages (execution-results-to-tool-messages tool-results)))
 
-               ;; Add assistant message
-               (add-message session "assistant" (response-content response))
+               ;; Add the assistant's tool_use turn verbatim — response-content
+               ;; is nil here, so add-message would lose the tool-call info
+               (add-raw-message session (response-message response))
 
-               ;; Add tool results
+               ;; Add tool results, preserving :tool-call-id correlation
                (dolist (msg tool-messages)
-                 (add-message session "tool" (getf msg :content)))
+                 (add-raw-message session msg))
 
-               ;; Continue conversation with results
-               (chat session (format nil "[Tool results processed, continue conversation]")))
+               ;; Let the model continue directly from the tool results — no
+               ;; synthetic user turn needed. Recurses in case the model
+               ;; requests another round of tool calls.
+               (respond session))
 
            ;; Handle execution errors
            (tool-validation-error (e)
@@ -281,6 +294,11 @@
         ;; Model gave up
         (t
          (values "Error: Model did not provide response" nil))))))
+
+(defun chat (session user-message)
+  "Send a message and get a response with enhanced tool support"
+  (add-message session "user" user-message)
+  (respond session))
 
 ;;;; ============================================================
 ;;;; INTERACTIVE CHAT LOOP

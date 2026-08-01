@@ -163,16 +163,28 @@ No additional project structure needed - just load and run!
 
 ## Verified Working
 
-Both code files have been tested and load successfully:
+Both code files load successfully, given the prerequisites from Quick Start above
+(`cl-llm-provider` and `str` quickloaded first — `example-chat.lisp` needs both
+before it can be `load`ed):
 
 ```bash
-$ sbcl --load example-chat.lisp
+$ sbcl --non-interactive \
+    --eval '(ql:quickload :cl-llm-provider)' \
+    --eval '(ql:quickload :str)' \
+    --load example-chat.lisp
 ...
-✓ example-chat.lisp loaded successfully
+; example-chat.lisp loaded, no errors
 
-$ sbcl --load example-chat.lisp --load example-chat-tests.lisp
+$ sbcl --non-interactive \
+    --eval '(ql:quickload :cl-llm-provider)' \
+    --eval '(ql:quickload :str)' \
+    --eval '(ql:quickload :fiveam)' \
+    --load example-chat.lisp \
+    --load example-chat-tests.lisp \
+    --eval '(example-chat-tests:run-tests)'
 ...
-✓ Both files loaded successfully
+; both files loaded, test suite runs (needs a local Ollama model pulled
+; for the completion/streaming tests to pass rather than skip)
 ```
 
 ## Submit to Library Examples

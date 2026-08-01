@@ -11,6 +11,7 @@
 
 (defpackage #:example-chat
   (:use #:cl)
+  (:import-from #:alexandria #:when-let)
   (:export #:start-chat
            #:chat
            #:chat-stream
@@ -260,44 +261,37 @@
     ;; Execute each tool
     (dolist (call tool-calls)
       (let* ((tool-name (cl-llm-provider:tool-call-name call))
-             (tool-args-ht (cl-llm-provider:tool-call-arguments call))
+             (args-plist (cl-llm-provider:tool-call-arguments call))
              (tool-id (cl-llm-provider:tool-call-id call))
              (tool (find tool-name *tools*
                          :key #'cl-llm-provider:tool-name
                          :test #'string=)))
 
-        ;; Convert hash table to plist
-        (let ((args-plist nil))
-          (maphash (lambda (k v)
-                     (push v args-plist)
-                     (push (intern (string-upcase k) :keyword) args-plist))
-                   tool-args-ht)
+        (format t "[CALL] ~A(~{~A: ~S~^, ~})~%" tool-name args-plist)
 
-          (format t "[CALL] ~A(~{~A: ~S~^, ~})~%" tool-name args-plist)
-
-          ;; Execute tool
-          (if tool
-              (handler-case
-                  (let* ((handler (cl-llm-provider:tool-handler tool))
-                         (result (funcall handler args-plist)))
-                    (format t "[RESULT] ~A~%" result)
-                    ;; Add tool result to history
-                    (push (list :role "tool"
-                                :tool-call-id tool-id
-                                :content (format nil "~A" result))
-                          *messages*))
-                (error (e)
-                  (format t "[ERROR] Tool execution failed: ~A~%" e)
+        ;; Execute tool
+        (if tool
+            (handler-case
+                (let* ((handler (cl-llm-provider:tool-handler tool))
+                       (result (funcall handler args-plist)))
+                  (format t "[RESULT] ~A~%" result)
+                  ;; Add tool result to history
                   (push (list :role "tool"
                               :tool-call-id tool-id
-                              :content (format nil "Error: ~A" e))
-                        *messages*)))
-              (progn
-                (format t "[ERROR] Tool ~A not found~%" tool-name)
+                              :content (format nil "~A" result))
+                        *messages*))
+              (error (e)
+                (format t "[ERROR] Tool execution failed: ~A~%" e)
                 (push (list :role "tool"
                             :tool-call-id tool-id
-                            :content (format nil "Tool not available"))
-                      *messages*))))))
+                            :content (format nil "Error: ~A" e))
+                      *messages*)))
+            (progn
+              (format t "[ERROR] Tool ~A not found~%" tool-name)
+              (push (list :role "tool"
+                          :tool-call-id tool-id
+                          :content (format nil "Tool not available"))
+                    *messages*)))))
 
     ;; Continue conversation with tool results
     (let ((response (cl-llm-provider:complete

@@ -284,20 +284,15 @@ If tool calls exist, execute them:
 (let ((tool-calls (cl-llm-provider:response-tool-calls *response-with-tools*)))
   (dolist (call tool-calls)
     (let* ((tool-name (cl-llm-provider:tool-call-name call))
-           (tool-args (cl-llm-provider:tool-call-arguments call))
+           ;; tool-call-arguments is already a keyword plist, e.g. (:location "Tokyo")
+           (args-plist (cl-llm-provider:tool-call-arguments call))
            (tool-id (cl-llm-provider:tool-call-id call)))
+      (declare (ignore tool-id))
 
-      ;; Convert hash table args to plist
-      (let ((args-plist nil))
-        (maphash (lambda (k v)
-                   (push v args-plist)
-                   (push (intern (string-upcase k) :keyword) args-plist))
-                 tool-args)
-
-        ;; Execute the tool
-        (format t "Calling ~A with ~S~%" tool-name args-plist)
-        (funcall (cl-llm-provider:tool-handler *weather-tool*)
-                 args-plist)))))
+      ;; Execute the tool
+      (format t "Calling ~A with ~S~%" tool-name args-plist)
+      (funcall (cl-llm-provider:tool-handler *weather-tool*)
+               args-plist))))
 ```
 
 See the complete example in `example-chat.lisp` for a full tool-calling implementation.
@@ -458,6 +453,10 @@ Now that you have the basics:
 
 ```lisp
 ;; Calculator tool
+;; WARNING: (eval (read-from-string ...)) executes arbitrary Lisp code.
+;; args here comes from the LLM, which in turn may be echoing untrusted
+;; user input — never eval it directly. Parse the expression yourself with
+;; a real arithmetic parser, or shell out to a sandboxed calculator instead.
 (cl-llm-provider:define-tool
  "calculate"
  "Perform math operations"
@@ -466,7 +465,7 @@ Now that you have the basics:
     :description "Math expression like '2+2'"))
  :required '("expression")
  :handler (lambda (args)
-            (eval (read-from-string (getf args :expression)))))
+            (safe-evaluate-arithmetic (getf args :expression))))
 
 ;; Web search tool (use Dexador to fetch real data)
 (cl-llm-provider:define-tool
@@ -528,7 +527,7 @@ Each provider offers models with different capabilities:
 
 ## Resources
 
-- **Library Documentation**: https://github.com/your-repo/cl-llm-provider
+- **Library Documentation**: [docs/INDEX.md](../INDEX.md)
 - **Provider Docs**:
   - OpenAI: https://platform.openai.com/docs
   - Anthropic: https://docs.anthropic.com

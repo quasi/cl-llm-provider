@@ -27,6 +27,10 @@ The LLM decides when to use tools. You decide what tools do.
 Use `define-tool` to create a callable function:
 
 ```lisp
+;; cl-llm-provider exports RETRY (for handler-bind/invoke-restart use), which
+;; collides with SB-EXT:RETRY already visible in a fresh CL-USER on SBCL.
+;; shadowing-import resolves it before use-package pulls in the rest.
+(shadowing-import 'cl-llm-provider:retry)
 (use-package :cl-llm-provider)
 
 ;; Define a simple tool
@@ -69,20 +73,26 @@ Parameters describe what inputs the tool accepts:
 
 ## Calling Tools from Completions
 
-Tell the LLM about your tools and it will decide to use them:
+`define-tool` just builds a tool-definition object — it doesn't register it
+anywhere. Use `register` (from `cl-llm-provider.tools`) to add it to the
+global registry, and `find-tool-by-name` to look it up later by name:
 
 ```lisp
-;; Define tools
-(define-tool "get_weather"
-  "Get the current weather for a city"
-  '((:name "city" :type :string))
-  :required '("city")
-  :handler (lambda (args)
-             (format nil "Weather in ~A: Sunny, 72°F" (getf args :city))))
+(shadowing-import 'cl-llm-provider:retry)  ; see note above on SB-EXT:RETRY
+(use-package :cl-llm-provider)
+(use-package :cl-llm-provider.tools)
+
+;; Define and register a tool
+(register (define-tool "get_weather"
+            "Get the current weather for a city"
+            '((:name "city" :type :string))
+            :required '("city")
+            :handler (lambda (args)
+                       (format nil "Weather in ~A: Sunny, 72°F" (getf args :city)))))
 
 ;; Ask the LLM to use a tool
 (let ((response (complete '((:role "user" :content "What's the weather in Paris?"))
-                         :tools (list (get-tool "get_weather")))))
+                         :tools (list (find-tool-by-name "get_weather")))))
 
   ;; Check if LLM requested tool calls
   (if (response-tool-calls response)
@@ -97,9 +107,9 @@ When an LLM requests tools, you execute them and send results back:
 ```lisp
 (defun handle-tool-call (tool-call)
   "Execute a tool call and return the result."
-  (let* ((tool-name (getf tool-call :name))
-         (tool-args (getf tool-call :arguments))
-         (tool (get-tool tool-name)))
+  (let* ((tool-name (tool-call-name tool-call))
+         (tool-args (tool-call-arguments tool-call))
+         (tool (find-tool-by-name tool-name)))
     ;; Execute the tool
     (funcall (tool-handler tool) tool-args)))
 
@@ -114,19 +124,21 @@ When an LLM requests tools, you execute them and send results back:
         (unless (response-tool-calls response)
           (return (response-content response)))
 
-        ;; Add assistant message to history
-        (push (response-message response) current-messages)
+        ;; Add assistant message to history (append, don't push — messages
+        ;; must stay oldest-first)
+        (setf current-messages
+              (append current-messages (list (response-message response))))
 
         ;; Handle each tool call
         (dolist (tool-call (response-tool-calls response))
           (let* ((result (handle-tool-call tool-call)))
             ;; Add tool result to history
-            (push (list :role "user"
-                       :content (format nil "Tool result: ~A" result))
-                 current-messages)))))))
+            (setf current-messages
+                  (append current-messages
+                          (list (make-tool-result (tool-call-id tool-call) result))))))))))
 
 ;; Use it
-(let ((tools (list (get-tool "get_weather"))))
+(let ((tools (list (find-tool-by-name "get_weather"))))
   (chat-with-tools '((:role "user" :content "What's the weather in Paris?"))
                   tools))
 ```
@@ -136,33 +148,35 @@ When an LLM requests tools, you execute them and send results back:
 Here's a practical agent that searches the web and summarizes:
 
 ```lisp
+(shadowing-import 'cl-llm-provider:retry)  ; see note above on SB-EXT:RETRY
 (use-package :cl-llm-provider)
+(use-package :cl-llm-provider.tools)
 
-;; Define tools
-(define-tool "search_web"
-  "Search the internet for information"
-  '((:name "query" :type :string)
-    (:name "num_results" :type :integer))
-  :required '("query")
-  :handler (lambda (args)
-             ;; In reality, call a real search API
-             (format nil "Results for '~A': Wikipedia, News, Blog posts"
-                     (getf args :query))))
+;; Define and register tools
+(register (define-tool "search_web"
+            "Search the internet for information"
+            '((:name "query" :type :string)
+              (:name "num_results" :type :integer))
+            :required '("query")
+            :handler (lambda (args)
+                       ;; In reality, call a real search API
+                       (format nil "Results for '~A': Wikipedia, News, Blog posts"
+                               (getf args :query)))))
 
-(define-tool "summarize_text"
-  "Summarize a long text"
-  '((:name "text" :type :string))
-  :required '("text")
-  :handler (lambda (args)
-             ;; In reality, use an NLP library or LLM
-             (let ((text (getf args :text)))
-               (format nil "Summary: ~A [shortened]" (subseq text 0 30)))))
+(register (define-tool "summarize_text"
+            "Summarize a long text"
+            '((:name "text" :type :string))
+            :required '("text")
+            :handler (lambda (args)
+                       ;; In reality, use an NLP library or LLM
+                       (let ((text (getf args :text)))
+                         (format nil "Summary: ~A [shortened]" (subseq text 0 30))))))
 
 ;; Agent loop
 (defun research-agent (topic)
   "Research a topic and provide a summary."
-  (let* ((tools (list (get-tool "search_web")
-                     (get-tool "summarize_text")))
+  (let* ((tools (list (find-tool-by-name "search_web")
+                     (find-tool-by-name "summarize_text")))
          (messages (list (list :role "user"
                               :content (format nil "Research this topic and provide a summary: ~A" topic)))))
 
@@ -177,20 +191,22 @@ Here's a practical agent that searches the web and summarizes:
         (unless (response-tool-calls response)
           (return (response-content response)))
 
-        ;; Add assistant message
-        (push (response-message response) messages)
+        ;; Add assistant message (append, don't push — messages must stay
+        ;; oldest-first)
+        (setf messages (append messages (list (response-message response))))
 
         ;; Execute tools
         (dolist (tool-call (response-tool-calls response))
-          (let* ((tool-name (getf tool-call :name))
-                 (tool-args (getf tool-call :arguments))
-                 (tool (get-tool tool-name))
+          (let* ((tool-name (tool-call-name tool-call))
+                 (tool-args (tool-call-arguments tool-call))
+                 (tool (find-tool-by-name tool-name))
                  (result (funcall (tool-handler tool) tool-args)))
             (format t "Tool ~A returned: ~A~%~%" tool-name result)
 
             ;; Add tool result
-            (push (list :role "user" :content (format nil "Tool result: ~A" result))
-                 messages)))))))
+            (setf messages
+                  (append messages
+                          (list (make-tool-result (tool-call-id tool-call) result))))))))))
 
 ;; Run it
 (research-agent "The history of Lisp")
@@ -208,7 +224,7 @@ Mark tools with safety levels and categories for advanced use:
   :required '("city")
   :safety-level :safe
   :categories '(:search :external-api)
-  :handler (lambda (args) ...))
+  :handler (lambda (args) (declare (ignore args)) "..."))
 
 ;; Dangerous tool - requires approval
 (define-tool "delete_file"
@@ -218,7 +234,7 @@ Mark tools with safety levels and categories for advanced use:
   :safety-level :dangerous
   :categories '(:filesystem :destructive)
   :requires-approval :always
-  :handler (lambda (args) ...))
+  :handler (lambda (args) (declare (ignore args)) "..."))
 ```
 
 See [How-To: Advanced Tools](../how-to/tools.md) for full details.
@@ -229,13 +245,13 @@ If tool calls aren't working:
 
 ```lisp
 ;; Check if a tool is registered
-(get-tool "get_weather")  ; Returns the tool or NIL
+(find-tool-by-name "get_weather")  ; Returns the tool or NIL
 
 ;; Check what tools you have
-(list-tools)
+(list-tools (ensure-registry))
 
 ;; See tool details
-(let ((tool (get-tool "get_weather")))
+(let ((tool (find-tool-by-name "get_weather")))
   (format t "Name: ~A~%" (tool-name tool))
   (format t "Description: ~A~%" (tool-description tool))
   (format t "Parameters: ~A~%" (tool-parameters tool)))
@@ -256,8 +272,8 @@ If tool calls aren't working:
     ;; If assistant wants to use tools
     (if (response-tool-calls response)
       (progn
-        ;; Execute tools and continue
-        ...)
+        ;; Execute tools and continue (see "Handling Tool Calls" above)
+        nil)
       ;; Otherwise, return final answer
       (return (response-content response)))))
 ```
@@ -265,6 +281,9 @@ If tool calls aren't working:
 ### Error Handling in Tools
 
 ```lisp
+;; fetch-page and network-error are placeholders for your own HTTP client
+;; and its condition type (e.g. drakma:drakma-error) — cl-llm-provider
+;; doesn't provide either.
 (define-tool "fetch_url"
   "Fetch a web page"
   '((:name "url" :type :string))

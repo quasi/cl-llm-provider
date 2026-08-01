@@ -23,6 +23,10 @@ This example demonstrates building an interactive chat application with session 
 (ql:quickload :cl-llm-provider)
 (ql:quickload :cl-ppcre)
 
+;; cl-llm-provider exports RETRY (for handler-bind/invoke-restart use), which
+;; collides with SB-EXT:RETRY already visible in a fresh CL-USER on SBCL.
+;; shadowing-import resolves it before use-package pulls in the rest.
+(shadowing-import 'cl-llm-provider:retry)
 (use-package :cl-llm-provider)
 (use-package :cl-llm-provider.tools)  ; NEW: Use enhanced tools module
 
@@ -129,7 +133,7 @@ This example demonstrates building an interactive chat application with session 
      :required '("query")
      :safety-level :safe
      :categories '(:search :external-api)
-     :parameter-validators '(("query" . (:length-validator :min-length 1 :max-length 200))
+     :parameter-validators '(("query" . (:min-length 1 :max-length 200))
                              ("max-results" . (:type :integer :min 1 :max 50)))
      :handler (lambda (args)
                (format nil "Search results for: ~A (~A results)"
@@ -145,8 +149,8 @@ This example demonstrates building an interactive chat application with session 
      :required '("location")
      :safety-level :safe
      :categories '(:search :external-api)
-     :parameter-validators '(("location" . (:length-validator :min-length 2 :max-length 100))
-                             ("unit" . (:enum-validator '("celsius" "fahrenheit"))))
+     :parameter-validators '(("location" . (:min-length 2 :max-length 100))
+                             ("unit" . (:enum ("celsius" "fahrenheit"))))
      :handler (lambda (args)
                (format nil "Weather for ~A: Sunny, 22°C"
                        (getf args :location))))
@@ -192,7 +196,7 @@ This example demonstrates building an interactive chat application with session 
            :on-start (lambda (call args)
                        (format t "~&[Tool] Executing ~A~%" (tool-call-name call)))
            :on-complete (lambda (call args result)
-                          (format t "~&[Tool] ✓ Completed~%" nil))))
+                          (format t "~&[Tool] ✓ Completed~%"))))
 
     session))
 
@@ -227,18 +231,24 @@ This example demonstrates building an interactive chat application with session 
 
 (defun add-message (session role content)
   "Add a message to the session history"
-  (push `(:role ,role :content ,content) (session-messages session)))
+  (push (list :role role :content content) (session-messages session)))
+
+(defun add-raw-message (session message)
+  "Add a fully-formed message plist (e.g. response-message, or a message
+   from execution-results-to-tool-messages) directly to session history.
+   Unlike add-message, this preserves fields like :tool-call-id that a
+   role/content pair can't carry, which is required for the provider to
+   correlate a tool_result with the tool_use that requested it."
+  (push message (session-messages session)))
 
 (defun get-conversation-history (session)
   "Get conversation history (in correct order)"
   (reverse (session-messages session)))
 
-(defun chat (session user-message)
-  "Send a message and get a response with enhanced tool support"
-  ;; Add user message to history
-  (add-message session "user" user-message)
-
-  ;; Get conversation history
+(defun respond (session)
+  "Request a completion for the session's current history, then either
+   return the model's text answer or execute requested tool calls and
+   recurse until the model gives a final answer."
   (let ((history (get-conversation-history session))
         (registry (session-tool-registry session)))
 
@@ -271,15 +281,18 @@ This example demonstrates building an interactive chat application with session 
                                                        :skip-approval t))
                     (tool-messages (execution-results-to-tool-messages tool-results)))
 
-               ;; Add assistant message
-               (add-message session "assistant" (response-content response))
+               ;; Add the assistant's tool_use turn verbatim — response-content
+               ;; is nil here, so add-message would lose the tool-call info
+               (add-raw-message session (response-message response))
 
-               ;; Add tool results
+               ;; Add tool results, preserving :tool-call-id correlation
                (dolist (msg tool-messages)
-                 (add-message session "tool" (getf msg :content)))
+                 (add-raw-message session msg))
 
-               ;; Continue conversation with results
-               (chat session (format nil "[Tool results processed, continue conversation]")))
+               ;; Let the model continue directly from the tool results — no
+               ;; synthetic user turn needed. Recurses in case the model
+               ;; requests another round of tool calls.
+               (respond session))
 
            ;; Handle execution errors
            (tool-validation-error (e)
@@ -298,6 +311,11 @@ This example demonstrates building an interactive chat application with session 
         ;; Model gave up
         (t
          (values "Error: Model did not provide response" nil))))))
+
+(defun chat (session user-message)
+  "Send a message and get a response with enhanced tool support"
+  (add-message session "user" user-message)
+  (respond session))
 
 ;; Helper function for backward compatibility
 (defun process-tool-calls (session response)
@@ -377,7 +395,7 @@ This example demonstrates building an interactive chat application with session 
   ;; Create provider
   (let ((provider (make-provider :anthropic
                                :api-key (uiop:getenv "ANTHROPIC_API_KEY")
-                               :model "claude-3-sonnet-20240229")))
+                               :model "claude-3-5-sonnet-20241022")))
 
     ;; Define tools
     (let ((tools (append (define-calculator-tools)
@@ -385,7 +403,7 @@ This example demonstrates building an interactive chat application with session 
 
       ;; Create session
       (let ((session (create-session provider
-                                    "claude-3-sonnet-20240229"
+                                    "claude-3-5-sonnet-20241022"
                                     :system-prompt "You are a helpful assistant with access to tools. Use tools when appropriate."
                                     :tools tools)))
 
@@ -405,7 +423,7 @@ This example demonstrates building an interactive chat application with session 
           (format t "Assistant: ~A~%~%" response))
 
         ;; Show session stats
-        (print-session-info session))))
+        (print-session-info session)))))
 
 (defun run-interactive-example ()
   "Run interactive chat with tools"
@@ -413,7 +431,7 @@ This example demonstrates building an interactive chat application with session 
   ;; Create provider
   (let ((provider (make-provider :anthropic
                                :api-key (uiop:getenv "ANTHROPIC_API_KEY")
-                               :model "claude-3-sonnet-20240229")))
+                               :model "claude-3-5-sonnet-20241022")))
 
     ;; Define tools
     (let ((tools (append (define-calculator-tools)
@@ -421,12 +439,12 @@ This example demonstrates building an interactive chat application with session 
 
       ;; Create session
       (let ((session (create-session provider
-                                    "claude-3-sonnet-20240229"
+                                    "claude-3-5-sonnet-20241022"
                                     :system-prompt "You are a helpful assistant. Use available tools when needed for calculations or information."
                                     :tools tools)))
 
         ;; Run interactive chat
-        (interactive-chat session :save-file "/tmp/chat-session.lisp"))))
+        (interactive-chat session :save-file "/tmp/chat-session.lisp")))))
 
 ;;;; ============================================================
 ;;;; ADVANCED EXAMPLE: MULTI-PROVIDER COMPARISON
@@ -439,7 +457,7 @@ This example demonstrates building an interactive chat application with session 
          (cons :anthropic
                (make-provider :anthropic
                             :api-key (uiop:getenv "ANTHROPIC_API_KEY")
-                            :model "claude-3-sonnet-20240229"))
+                            :model "claude-3-5-sonnet-20241022"))
          (cons :openai
                (make-provider :openai
                             :api-key (uiop:getenv "OPENAI_API_KEY")
@@ -510,19 +528,19 @@ export OPENAI_API_KEY="sk-..."
 
 Example 1: Math with tools
 User: What is 25 * 4?
-[Executing tool: multiply with args: (:A 25 :B 4)]
-[Tool result: {"result": 100}]
+[Tool] Executing multiply
+[Tool] ✓ Completed
 Assistant: The result of 25 * 4 is 100.
 
 Example 2: Information query
 User: What time is it?
-[Executing tool: get_time with args: NIL]
-[Tool result: {"time": "14:32:45", "date": "2024-12-30"}]
+[Tool] Executing get_time
+[Tool] ✓ Completed
 Assistant: The current time is 14:32:45 and the date is 2024-12-30.
 
 === Session Info ===
 Provider: ANTHROPIC-PROVIDER
-Model: claude-3-sonnet-20240229
+Model: claude-3-5-sonnet-20241022
 Messages: 6
 Total tokens: 1245
 Available tools: ADD, SUBTRACT, MULTIPLY, DIVIDE, SEARCH, GET_WEATHER, GET_TIME
@@ -536,8 +554,8 @@ Type 'quit' to exit, 'info' for session info
 
 [Messages: 0, Tokens: 0]
 You: What's 15 + 27?
-[Executing tool: add with args: (:A 15 :B 27)]
-[Tool result: {"result": 42}]
+[Tool] Executing add
+[Tool] ✓ Completed
 Assistant: 15 + 27 equals 42.
 
 [Messages: 2, Tokens: 156]
@@ -548,7 +566,7 @@ Assistant: There are 3,600 seconds in an hour (60 minutes × 60 seconds per minu
 You: info
 === Session Info ===
 Provider: ANTHROPIC-PROVIDER
-Model: claude-3-sonnet-20240229
+Model: claude-3-5-sonnet-20241022
 Messages: 4
 Total tokens: 298
 Available tools: ADD, SUBTRACT, MULTIPLY, DIVIDE, SEARCH, GET_WEATHER, GET_TIME
@@ -591,24 +609,19 @@ Goodbye!
 
 ### Add New Tools
 
+Tools are dispatched via the `:handler` closure on the tool-definition
+itself — there's no separate global dispatch function to define:
+
 ```lisp
 (defun define-custom-tools ()
   (list
-   (make-instance 'tool-definition
-     :name "my_tool"
-     :description "Do something custom"
-     :parameters '((:name "input" :type :string :description "Input"))
-     :required '("input"))))
-```
-
-### Add Tool Implementations
-
-```lisp
-(defun execute-tool (tool-name arguments)
-  (case (make-keyword (string-upcase tool-name))
-    (:my_tool
-     ;; Your implementation
-     (yason:encode-to-string '(("result" . "output"))))))
+   (define-tool "my_tool"
+     "Do something custom"
+     '((:name "input" :type :string :description "Input"))
+     :required '("input")
+     :handler (lambda (args)
+                ;; Your implementation
+                (format nil "Result for: ~A" (getf args :input))))))
 ```
 
 ### Integrate with Database
@@ -641,7 +654,7 @@ This example showcases these new features:
 
 - **Tool Safety Levels** - Tools classified as :safe, :moderate, or :dangerous
 - **Tool Categories** - Organize tools with predefined categories (:calculation, :search, etc.)
-- **Parameter Validators** - Validate arguments before execution (:type, :length-validator, :enum-validator)
+- **Parameter Validators** - Validate arguments before execution (:type, :min-length/:max-length, :enum)
 - **Tool Registry** - Dynamically manage and discover tools
 - **Lifecycle Hooks** - Execute code at :on-start and :on-complete events
 - **Error Handling** - Comprehensive error conditions for validation, safety, and approval
@@ -651,11 +664,9 @@ See the enhanced tools documentation for more details on each feature.
 
 ## See Also
 
-- `docs/TOOLS-README.md` - **New!** Enhanced tools documentation index
-- `docs/TOOLS-QUICK-START.md` - **New!** 5-minute getting started guide
-- `docs/TOOLS-ADVANCED.md` - **New!** Comprehensive feature guide
-- `docs/TOOLS-API-REFERENCE.md` - **New!** Complete API documentation
-- `docs/PROTOCOL.md` - Protocol architecture
-- `docs/FEATURES.md` - Feature documentation
-- `docs/PROVIDERS.md` - Adding new providers
-- README.md - Quick start and API reference
+- [Tutorial: Tool Calling](../tutorials/02-tool-calling.md) - Getting started guide
+- [How-To: Advanced Tools](../how-to/tools.md) - Comprehensive feature guide
+- [Reference: API](../reference/api.md) - Complete API documentation
+- [Explanation: Architecture](../explanation/architecture.md) - Protocol architecture
+- [Explanation: Providers](../explanation/providers.md) - Adding new providers
+- `README.md` - Quick start and API reference

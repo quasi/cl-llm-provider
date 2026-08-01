@@ -4,6 +4,10 @@
 
 ;;;; Setup - Load required packages
 
+;; cl-llm-provider exports RETRY (for handler-bind/invoke-restart use), which
+;; collides with SB-EXT:RETRY already visible in a fresh CL-USER on SBCL.
+;; shadowing-import resolves it before use-package pulls in the rest.
+(shadowing-import 'cl-llm-provider:retry)
 (use-package :cl-llm-provider)
 (use-package :cl-llm-provider.tools)
 
@@ -11,93 +15,97 @@
 ;;;
 ;;; Demonstrates basic category usage for tool organization.
 
-(define-tool "search_web"
-  "Search the web for information"
-  '((:name "query" :type :string :description "What to search for")
-    (:name "limit" :type :integer :description "Max results (1-50)"))
-  :required '("query")
-  :safety-level :safe
-  :categories '(:search :external-api)
-  :parameter-validators '(("limit" . (:type :integer :min 1 :max 50)))
-  :handler (lambda (args)
-             ;; In a real app, this would call a search API
-             (format nil "Search results for: ~A (~A results)"
-                     (getf args :query)
-                     (or (getf args :limit) 10))))
+(defparameter *search-web-tool*
+  (define-tool "search_web"
+    "Search the web for information"
+    '((:name "query" :type :string :description "What to search for")
+      (:name "limit" :type :integer :description "Max results (1-50)"))
+    :required '("query")
+    :safety-level :safe
+    :categories '(:search :external-api)
+    :parameter-validators '(("limit" . (:type :integer :min 1 :max 50)))
+    :handler (lambda (args)
+               ;; In a real app, this would call a search API
+               (format nil "Search results for: ~A (~A results)"
+                       (getf args :query)
+                       (or (getf args :limit) 10)))))
 
 ;;;; Example 2: Database Tool with Validation
 ;;;
 ;;; Demonstrates parameter validation to prevent SQL injection and bad data.
 
-(define-tool "query_database"
-  "Query the database with parameterized queries"
-  '((:name "table" :type :string :description "Table name")
-    (:name "where" :type :string :description "WHERE clause")
-    (:name "limit" :type :integer :description "Result limit"))
-  :required '("table")
-  :safety-level :moderate
-  :categories '(:database :search)
-  :parameter-validators
-  '(("table" . (:pattern "^[a-zA-Z_][a-zA-Z0-9_]*$"))  ; Valid table name
-    ("where" . (:length-validator :max-length 500))     ; Prevent huge queries
-    ("limit" . (:type :integer :min 1 :max 1000)))     ; Reasonable limits
-  :handler (lambda (args)
-             (format nil "Query: SELECT * FROM ~A WHERE ~A LIMIT ~A"
-                     (getf args :table)
-                     (getf args :where)
-                     (or (getf args :limit) 100))))
+(defparameter *query-database-tool*
+  (define-tool "query_database"
+    "Query the database with parameterized queries"
+    '((:name "table" :type :string :description "Table name")
+      (:name "where" :type :string :description "WHERE clause")
+      (:name "limit" :type :integer :description "Result limit"))
+    :required '("table")
+    :safety-level :moderate
+    :categories '(:database :search)
+    :parameter-validators
+    '(("table" . (:pattern "^[a-zA-Z_][a-zA-Z0-9_]*$"))  ; Valid table name
+      ("where" . (:max-length 500))                        ; Prevent huge queries
+      ("limit" . (:type :integer :min 1 :max 1000)))     ; Reasonable limits
+    :handler (lambda (args)
+               (format nil "Query: SELECT * FROM ~A WHERE ~A LIMIT ~A"
+                       (getf args :table)
+                       (getf args :where)
+                       (or (getf args :limit) 100)))))
 
 ;;;; Example 3: File System Tool with Approval
 ;;;
 ;;; Demonstrates approval workflow for destructive operations with logging hooks.
 
-(define-tool "delete_file"
-  "Delete a file from the server"
-  '((:name "path" :type :string :description "Full path to delete"))
-  :required '("path")
-  :safety-level :dangerous
-  :categories '(:filesystem :destructive)
-  :requires-approval :always  ; Always require approval
-  :parameter-validators '(("path" . (:pattern "^/data/uploads/")))  ; Only in safe dir
-  :on-start (lambda (call args)
-              (format t "~&[⚠️  WARNING] About to delete: ~A~%" (getf args :path))
-              (force-output))
-  :handler (lambda (args)
-             (let ((path (getf args :path)))
-               (if (probe-file path)
-                   (progn (delete-file path)
-                          (format nil "✓ Deleted: ~A" path))
-                   (format nil "⚠ File not found: ~A" path)))))
+(defparameter *delete-file-tool*
+  (define-tool "delete_file"
+    "Delete a file from the server"
+    '((:name "path" :type :string :description "Full path to delete"))
+    :required '("path")
+    :safety-level :dangerous
+    :categories '(:filesystem :destructive)
+    :requires-approval :always  ; Always require approval
+    :parameter-validators '(("path" . (:pattern "^/data/uploads/")))  ; Only in safe dir
+    :on-start (lambda (call args)
+                (format t "~&[⚠️  WARNING] About to delete: ~A~%" (getf args :path))
+                (force-output))
+    :handler (lambda (args)
+               (let ((path (getf args :path)))
+                 (if (probe-file path)
+                     (progn (delete-file path)
+                            (format nil "✓ Deleted: ~A" path))
+                     (format nil "⚠ File not found: ~A" path))))))
 
 ;;;; Example 4: Payment Tool with Safety-Based Approval
 ;;;
 ;;; Demonstrates conditional approval based on safety level.
 
-(define-tool "transfer_money"
-  "Transfer funds between accounts"
-  '((:name "from_account" :type :string :description "Source account ID")
-    (:name "to_account" :type :string :description "Destination account ID")
-    (:name "amount" :type :number :description "Amount in USD"))
-  :required '("from_account" "to_account" "amount")
-  :safety-level :dangerous
-  :categories '(:payment :destructive)
-  :requires-approval :always
-  :parameter-validators
-  '(("from_account" . (:pattern "^ACC-[0-9]{8}$"))
-    ("to_account" . (:pattern "^ACC-[0-9]{8}$"))
-    ("amount" . (:type :number :min 0.01 :max 100000)))
-  :on-start (lambda (call args)
-              (format t "~&━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%")
-              (format t "💰 PAYMENT TRANSACTION~%")
-              (format t "From: ~A~%" (getf args :from_account))
-              (format t "To: ~A~%" (getf args :to_account))
-              (format t "Amount: $~A~%" (getf args :amount))
-              (format t "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%"))
-  :handler (lambda (args)
-             (format nil "Transferred $~A from ~A to ~A"
-                     (getf args :amount)
-                     (getf args :from_account)
-                     (getf args :to_account))))
+(defparameter *transfer-money-tool*
+  (define-tool "transfer_money"
+    "Transfer funds between accounts"
+    '((:name "from_account" :type :string :description "Source account ID")
+      (:name "to_account" :type :string :description "Destination account ID")
+      (:name "amount" :type :number :description "Amount in USD"))
+    :required '("from_account" "to_account" "amount")
+    :safety-level :dangerous
+    :categories '(:payment :destructive)
+    :requires-approval :always
+    :parameter-validators
+    '(("from_account" . (:pattern "^ACC-[0-9]{8}$"))
+      ("to_account" . (:pattern "^ACC-[0-9]{8}$"))
+      ("amount" . (:type :number :min 0.01 :max 100000)))
+    :on-start (lambda (call args)
+                (format t "~&━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%")
+                (format t "💰 PAYMENT TRANSACTION~%")
+                (format t "From: ~A~%" (getf args :from_account))
+                (format t "To: ~A~%" (getf args :to_account))
+                (format t "Amount: $~A~%" (getf args :amount))
+                (format t "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━~%"))
+    :handler (lambda (args)
+               (format nil "Transferred $~A from ~A to ~A"
+                       (getf args :amount)
+                       (getf args :from_account)
+                       (getf args :to_account)))))
 
 ;;;; Example 5: Tool Registry with Discovery
 ;;;
@@ -109,11 +117,11 @@
                     :name "my-assistant"
                     :default-safety-level :safe)))
 
-    ;; Define and register tools
-    (register-tool registry (define-tool "search_web" ...))
-    (register-tool registry (define-tool "query_database" ...))
-    (register-tool registry (define-tool "delete_file" ...))
-    (register-tool registry (define-tool "transfer_money" ...))
+    ;; Register the tools defined in Examples 1-4 above
+    (register-tool registry *search-web-tool*)
+    (register-tool registry *query-database-tool*)
+    (register-tool registry *delete-file-tool*)
+    (register-tool registry *transfer-money-tool*)
 
     registry))
 
@@ -196,29 +204,31 @@
 (defun create-approval-callback-with-rules ()
   "Create approval callback with custom business rules"
   (lambda (tool tool-call arguments)
-    (let ((tool-name (tool-name tool))
-          (safety-level (tool-safety-level tool)))
+    (declare (ignore tool-call))
+    (block approval-decision
+      (let ((tool-name (tool-name tool))
+            (safety-level (tool-safety-level tool)))
 
-      ;; Rule 1: Auto-approve safe tools
-      (when (eq safety-level :safe)
-        (return-from create-approval-callback-with-rules :approved))
+        ;; Rule 1: Auto-approve safe tools
+        (when (eq safety-level :safe)
+          (return-from approval-decision :approved))
 
-      ;; Rule 2: Reject dangerous operations outside business hours
-      (when (eq safety-level :dangerous)
-        (let ((hour (nth 2 (multiple-value-list (decode-universal-time (get-universal-time))))))
-          (if (or (< hour 9) (> hour 17))  ; Outside 9am-5pm
-              (return-from create-approval-callback-with-rules
-                (list :rejected "Dangerous operations only allowed during business hours")))))
+        ;; Rule 2: Reject dangerous operations outside business hours
+        (when (eq safety-level :dangerous)
+          (let ((hour (nth 2 (multiple-value-list (decode-universal-time (get-universal-time))))))
+            (if (or (< hour 9) (> hour 17))  ; Outside 9am-5pm
+                (return-from approval-decision
+                  (list :rejected "Dangerous operations only allowed during business hours")))))
 
-      ;; Rule 3: Require approval for high-value payments
-      (when (string= tool-name "transfer_money")
-        (let ((amount (getf arguments :amount)))
-          (when (> amount 10000)
-            (return-from create-approval-callback-with-rules
-              (list :rejected "Payments over $10,000 require manager approval")))))
+        ;; Rule 3: Require approval for high-value payments
+        (when (string= tool-name "transfer_money")
+          (let ((amount (getf arguments :amount)))
+            (when (> amount 10000)
+              (return-from approval-decision
+                (list :rejected "Payments over $10,000 require manager approval")))))
 
-      ;; Default: approve moderate tools
-      :approved)))
+        ;; Default: approve moderate tools
+        :approved))))
 
 ;;;; Example 9: Tool Execution with Error Handling
 ;;;
@@ -273,7 +283,7 @@
                      :handler (lambda (args)
                                 (format nil "Found info on: ~A" (getf args :query))))
 
-                   ;; Moderate tools
+                   ;; Safe tools (read-only, no side effects)
                    (define-tool "read_file"
                      "Read a file"
                      '((:name "path" :type :string))
@@ -323,21 +333,25 @@
          (response (complete messages
                              :tools (tools-for-llm :registry registry))))
 
-    (when (response-tool-calls response)
-      (format t "~&Assistant used tools~%")
+    (if (response-tool-calls response)
+        (progn
+          (format t "~&Assistant used tools~%")
 
-      ;; Execute tools with user confirmation
-      (let* ((approval-callback (make-interactive-approval-callback))
-             (results (execute-tool-calls response
-                                          :registry registry
-                                          :approval-callback approval-callback)))
+          ;; No :approval-callback passed here — that would override the
+          ;; registry's own callback (create-secure-assistant-registry set
+          ;; it to the business-rules callback from Example 8), and
+          ;; execute-tool-calls falls back to the registry's default when
+          ;; none is given.
+          (let* ((results (execute-tool-calls response :registry registry)))
 
-        ;; Continue conversation
-        (complete (append messages
-                         (list (:role "assistant" :content (response-content response)))
-                         (execution-results-to-tool-messages results)))))
-
-    (response-content response)))
+            ;; Continue conversation — the assistant turn is response-message
+            ;; itself (it carries the tool_use info), not a hand-built plist
+            (let ((final-response
+                    (complete (append messages
+                                      (list (response-message response))
+                                      (execution-results-to-tool-messages results)))))
+              (response-content final-response))))
+        (response-content response))))
 
 ;; Example usage:
 ;; (assistant-chat "Search for information about Common Lisp")
@@ -347,27 +361,28 @@
 ;;;
 ;;; Demonstrates creating complex validators from simple ones.
 
-(define-tool "upload_file"
-  "Upload a file to the server"
-  '((:name "filename" :type :string)
-    (:name "content" :type :string))
-  :safety-level :moderate
-  :categories '(:filesystem)
-  :parameter-validators
-  (list
-   ;; Filename: not too long, valid characters, must be txt/pdf/doc
-   ("filename" . (make-composite-validator
-                   (make-length-validator :max-length 256)
-                   (make-pattern-validator "^[a-zA-Z0-9._-]+\\.(txt|pdf|doc|docx)$")))
+(defparameter *upload-file-tool*
+  (define-tool "upload_file"
+    "Upload a file to the server"
+    '((:name "filename" :type :string)
+      (:name "content" :type :string))
+    :safety-level :moderate
+    :categories '(:filesystem)
+    :parameter-validators
+    (list
+     ;; Filename: not too long, valid characters, must be txt/pdf/doc
+     (cons "filename" (make-composite-validator
+                       (make-length-validator :max-length 256)
+                       (make-pattern-validator "^[a-zA-Z0-9._-]+\\.(txt|pdf|doc|docx)$")))
 
-   ;; Content: reasonable size, valid UTF-8
-   ("content" . (make-composite-validator
-                  (make-length-validator :max-length 10000000)  ; 10MB
-                  (lambda (x) (stringp x)))))
-  :handler (lambda (args)
-             (format nil "Uploaded: ~A (~A bytes)"
-                     (getf args :filename)
-                     (length (getf args :content)))))
+     ;; Content: reasonable size, valid UTF-8
+     (cons "content" (make-composite-validator
+                      (make-length-validator :max-length 10000000)  ; 10MB
+                      (lambda (x) (stringp x)))))
+    :handler (lambda (args)
+               (format nil "Uploaded: ~A (~A bytes)"
+                       (getf args :filename)
+                       (length (getf args :content))))))
 
 ;;;; Example 12: Registry Search and Filter
 ;;;

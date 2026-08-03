@@ -334,7 +334,13 @@ Handle authentication and rate limits gracefully:
 **Available restarts:**
 - `use-value` - Provide a new value (e.g., different API key)
 - `wait-and-retry` - Wait and automatically retry
-- `use-fallback-provider` - Switch to a different provider
+- `use-fallback-provider` - Switch to a different provider. Takes an optional
+  second argument, the model to use there — pass it whenever the fallback is a
+  different service, since Gemini's model names mean nothing to anyone else
+- `use-model` - Retry against the *same* provider with a different model name
+
+See [Local models and failover](local-models-and-failover.md) for the
+local-first pattern these two are built for.
 
 ## Configuration Inspection
 

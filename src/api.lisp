@@ -319,7 +319,12 @@ Example:
                                                              :model mod
                                                              :dimensions dimensions)))
                   (parse-embedding-response prov raw-response))))
-        (use-fallback-provider (fallback)
+        ;; SAME CONTRACT AS COMPLETE'S, and it has to be. One restart name that takes
+        ;; a model here and refuses one there is worse than either behaviour
+        ;; alone: a caller writes the two-argument form, it works against
+        ;; COMPLETE, and it dies on arity the first time the same recovery code
+        ;; covers an embedding. Found by writing the how-to, not by a test.
+        (use-fallback-provider (fallback &optional (fallback-model nil fallback-model-p))
           :report "Re-issue the request with a different provider"
           :interactive (lambda ()
                          (format *query-io* "Enter fallback provider keyword: ")
@@ -327,7 +332,16 @@ Example:
                          (let ((*read-eval* nil))
                            (list (read *query-io*))))
           (setf prov (%coerce-provider fallback)
-                mod (%resolve-model model prov)))))))
+                mod (if fallback-model-p
+                        fallback-model
+                        (%resolve-model model prov))))
+        (use-model (new-model)
+          :report "Re-issue the request with a different model"
+          :interactive (lambda ()
+                         (format *query-io* "Enter model name: ")
+                         (finish-output *query-io*)
+                         (list (read-line *query-io*)))
+          (setf mod new-model))))))
 
 (defun/i complete-stream (messages &key provider model max-tokens temperature
                                       system tools tool-choice stop
@@ -381,7 +395,10 @@ Example:
     (loop
       (restart-case
           (return
-            (let ((stream (send-streaming-request prov messages
+            ;; Bound inside the loop for the same reason as in COMPLETE: a model
+            ;; corrected by USE-MODEL must be the one a second failure names.
+            (let* ((*requested-model* mod)
+                   (stream (send-streaming-request prov messages
                                                   :model mod
                                                   :max-tokens max-tok
                                                   :temperature temp
@@ -407,7 +424,11 @@ Example:
                                            (first (stream-chunks stream)))))))
 
               stream))
-        (use-fallback-provider (fallback)
+        ;; SAME CONTRACT AS COMPLETE'S — see the note in EMBEDDING. This one matters
+        ;; most of the three: a streaming turn is the path an agent actually
+        ;; runs, so a recovery handler written once and reused is the normal
+        ;; case rather than the unusual one.
+        (use-fallback-provider (fallback &optional (fallback-model nil fallback-model-p))
           :report "Re-issue the request with a different provider"
           :interactive (lambda ()
                          (format *query-io* "Enter fallback provider keyword: ")
@@ -415,4 +436,13 @@ Example:
                          (let ((*read-eval* nil))
                            (list (read *query-io*))))
           (setf prov (%coerce-provider fallback)
-                mod (%resolve-model model prov)))))))
+                mod (if fallback-model-p
+                        fallback-model
+                        (%resolve-model model prov))))
+        (use-model (new-model)
+          :report "Re-issue the request with a different model"
+          :interactive (lambda ()
+                         (format *query-io* "Enter model name: ")
+                         (finish-output *query-io*)
+                         (list (read-line *query-io*)))
+          (setf mod new-model))))))

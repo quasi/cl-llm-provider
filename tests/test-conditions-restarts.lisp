@@ -1137,3 +1137,146 @@ same green."
     (when caught
       (fiveam:is (equal "what-the-server-says" (error-requested-model caught))
                  "the server's own name for what it refused was not overwritten"))))
+
+;;;; ------------------------------------------------------------
+;;;; One restart name, one contract, across all three entry points
+;;;; ------------------------------------------------------------
+
+(defclass recording-embedding-provider (openai-provider) ())
+
+(defmethod send-embedding-request ((p recording-embedding-provider) input
+                                   &key model &allow-other-keys)
+  (declare (ignore input))
+  (push (list (provider-default-model p) model) *models-seen*)
+  (yason:parse "{\"data\":[{\"embedding\":[0.1,0.2],\"index\":0}],\"model\":\"m\",\"usage\":{\"prompt_tokens\":1,\"total_tokens\":1}}"))
+
+(defclass unreachable-embedding-provider (openai-provider) ())
+
+(defmethod send-embedding-request ((p unreachable-embedding-provider) input
+                                   &key &allow-other-keys)
+  (declare (ignore input))
+  (error 'provider-network-error :provider p :url "http://nowhere/v1"
+                                 :operation :embedding))
+
+(defclass recording-stream-provider (openai-provider) ())
+
+(defmethod send-streaming-request ((p recording-stream-provider) messages
+                                   &key model &allow-other-keys)
+  (declare (ignore messages))
+  (push (list (provider-default-model p) model) *models-seen*)
+  ;; No on-chunk/on-complete is passed by the test, so COMPLETE-STREAM returns
+  ;; this without reading it — no http-stream needed.
+  (make-instance 'completion-stream :provider p :model model :state :open))
+
+(defclass unreachable-stream-provider (openai-provider) ())
+
+(defmethod send-streaming-request ((p unreachable-stream-provider) messages
+                                   &key &allow-other-keys)
+  (declare (ignore messages))
+  (error 'provider-network-error :provider p :url "http://nowhere/v1"
+                                 :operation :streaming))
+
+(fiveam:test every-entry-point-offers-the-same-recovery-contract
+  "ONE RESTART NAME, ONE CONTRACT, across COMPLETE, EMBEDDING and COMPLETE-STREAM.
+
+Found by writing the how-to, not by a test, and that is the point. The
+cross-provider fix landed in COMPLETE alone and left the other two with a
+same-named restart that refused the second argument. A caller writes the
+two-argument form, watches it work against COMPLETE, reuses the same recovery
+handler for a STREAMING turn — the path an agent actually runs — and dies on
+arity, at the moment its provider is already down.
+
+DISCRIMINATING: INVOKES the two-argument form against each entry point and
+asserts the supplied model is what arrived. Arity is not introspectable — a
+restart-case clause's lambda list cannot be read back — so presence checks via
+COMPUTE-RESTARTS would pass whether the argument were accepted or rejected.
+Invoking is the only form that can tell those apart, and a wrong arity fails as
+SB-INT:SIMPLE-PROGRAM-ERROR rather than as a quiet assertion.
+
+Three explicit cases and no loop: there is no registry of entry points to iterate,
+which is precisely how the three came apart."
+  ;; COMPLETE
+  (setf *models-seen* nil)
+  (handler-bind
+      ((provider-network-error
+         (lambda (c)
+           (let ((r (find-restart 'cl-llm-provider:use-fallback-provider c)))
+             (when r (invoke-restart r
+                                     (make-instance 'permissive-recording-provider
+                                                    :model "its-own-default")
+                                     "supplied-to-complete"))))))
+    (complete '((:role "user" :content "hi"))
+              :provider (make-instance 'unreachable-test-provider :model "dead")
+              :model "dead"))
+  (fiveam:is (equal "supplied-to-complete" (second (first *models-seen*)))
+             "COMPLETE's use-fallback-provider took a model")
+
+  ;; COMPLETE-STREAM — the path an agent's turn actually takes
+  (setf *models-seen* nil)
+  (handler-bind
+      ((provider-network-error
+         (lambda (c)
+           (let ((r (find-restart 'cl-llm-provider:use-fallback-provider c)))
+             (when r (invoke-restart r
+                                     (make-instance 'recording-stream-provider
+                                                    :model "its-own-default")
+                                     "supplied-to-stream"))))))
+    (complete-stream '((:role "user" :content "hi"))
+                     :provider (make-instance 'unreachable-stream-provider :model "dead")
+                     :model "dead"))
+  (fiveam:is (equal "supplied-to-stream" (second (first *models-seen*)))
+             "COMPLETE-STREAM's use-fallback-provider took a model too")
+
+  ;; EMBEDDING
+  (setf *models-seen* nil)
+  (handler-bind
+      ((provider-network-error
+         (lambda (c)
+           (let ((r (find-restart 'cl-llm-provider:use-fallback-provider c)))
+             (when r (invoke-restart r
+                                     (make-instance 'recording-embedding-provider
+                                                    :model "its-own-default")
+                                     "supplied-to-embedding"))))))
+    (embedding "hi"
+               :provider (make-instance 'unreachable-embedding-provider :model "dead")
+               :model "dead"))
+  (fiveam:is (equal "supplied-to-embedding" (second (first *models-seen*)))
+             "EMBEDDING's use-fallback-provider took a model too"))
+
+(defclass fussy-stream-provider (openai-provider) ())
+
+(defmethod send-streaming-request ((p fussy-stream-provider) messages
+                                   &key model &allow-other-keys)
+  (declare (ignore messages))
+  (push (list (provider-default-model p) model) *models-seen*)
+  (unless (equal model (provider-default-model p))
+    (error 'provider-model-not-found-error
+           :provider p :requested-model model :status-code 404
+           :message "Model not found"))
+  (make-instance 'completion-stream :provider p :model model :state :open))
+
+(fiveam:test use-model-is-offered-on-the-streaming-path-too
+  "USE-MODEL travels with USE-FALLBACK-PROVIDER, or the pair is half-useful.
+
+An agent handed a model-not-found on a STREAMING turn could otherwise only change
+provider or repeat the same 404 — the gap that made this restart necessary on
+COMPLETE, left open on the entry point an agent's turn actually uses.
+
+DISCRIMINATING: asserts the SECOND attempt carried the correction, on a provider
+that refuses anything but its own model. A test asserting only that a stream came
+back would pass against a fixture that ignored :model."
+  (setf *models-seen* nil)
+  (let ((p (make-instance 'fussy-stream-provider :model "the-real-model")))
+    (handler-bind
+        ((provider-model-not-found-error
+           (lambda (c)
+             (let ((r (find-restart 'cl-llm-provider:use-model c)))
+               (when r (invoke-restart r "the-real-model"))))))
+      (complete-stream '((:role "user" :content "hi"))
+                       :provider p :model "a-typo"))
+    (fiveam:is (= 2 (length *models-seen*))
+               "two attempts — the typo, then the correction")
+    (fiveam:is (equal "a-typo" (second (second *models-seen*)))
+               "the first carried the typo")
+    (fiveam:is (equal "the-real-model" (second (first *models-seen*)))
+               "and the second carried what the handler supplied")))

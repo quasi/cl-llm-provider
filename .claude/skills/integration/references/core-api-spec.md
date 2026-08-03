@@ -515,12 +515,41 @@ condition
 - Returns: Result of retry with new key
 - Contract: `(setf (slot-value provider 'api-key) new-key)`
 
-**`use-fallback-provider`** (provided by `provider-api-error`):
-- Available when: API error signaled
-- Action: Switches to alternative provider
-- Argument: Fallback provider instance
-- Returns: Result using fallback provider
-- Contract: Retries with different provider instance
+**`use-fallback-provider`** (established by `complete` / `complete-stream` / `embedding`):
+- Available when: any error is signaled during a request — network, API, or model
+- Action: Re-issues the request against a different provider
+- Arguments: `(fallback &optional fallback-model)`
+  - `fallback` — a provider instance or a provider-type keyword
+  - `fallback-model` — **supply this whenever the fallback is a different service.**
+    Omitted, the caller's original model is kept and re-resolved against the new
+    provider, which is correct only when both endpoints serve the *same* model
+    (two mirrors, a local copy of a cloud model). Across services it sends a name
+    the fallback has never heard of and the request dies on the fallback's own 404
+    — `"gemma-4-26B-A4B-it-QAT-MLX-4bit"` means nothing to OpenRouter.
+- Returns: Result from the fallback
+- Contract: sets both the provider and the model used by the next attempt
+
+```lisp
+;; Local-first with a cloud understudy. BOTH arguments, because the two
+;; services do not share a model name.
+(handler-bind
+    ((provider-network-error
+       (lambda (c)
+         (let ((r (find-restart 'use-fallback-provider c)))
+           (when r (invoke-restart r cloud-provider "openai/gpt-oss-120b"))))))
+  (complete messages :provider local-provider :model "gemma-4-26B-A4B-it-QAT-MLX-4bit"))
+```
+
+**`use-model`** (established by `complete` / `complete-stream`):
+- Available when: any error is signaled during a request; the one it is for is
+  `provider-model-not-found-error`
+- Action: Re-issues the request against the **same** provider with a different model
+- Argument: Model name (string)
+- Returns: Result of the retry
+- Contract: sets the model used by the next attempt, provider unchanged
+- Use this rather than `use-fallback-provider` when the model name is the only
+  thing wrong. Changing provider to fix a typo is a sledgehammer, and `retry`
+  repeats the same 404.
 
 ---
 

@@ -1280,3 +1280,256 @@ back would pass against a fixture that ignored :model."
                "the first carried the typo")
     (fiveam:is (equal "the-real-model" (second (first *models-seen*)))
                "and the second carried what the handler supplied")))
+
+;;;; ------------------------------------------------------------
+;;;; Section 6: The two restarts against each other
+;;;;
+;;;; Section 5 tested USE-MODEL and USE-FALLBACK-PROVIDER one at a time and each
+;;;; came out green. The pair was never run against a single call, and that is
+;;;; where they fight: USE-MODEL writes MOD, and a one-argument
+;;;; USE-FALLBACK-PROVIDER recomputes MOD from MODEL — the caller's original
+;;;; keyword argument, which USE-MODEL cannot reach — so the correction is
+;;;; discarded.
+;;;;
+;;;; The interaction is NEW. Before these restarts, MOD was written by exactly
+;;;; one thing, so "recompute from MODEL" and "keep MOD" were the same
+;;;; behaviour. Adding a second writer made them different and nothing said so.
+;;;;
+;;;; These tests bind *MODELS-SEEN* rather than SETF it. A test that dies
+;;;; mid-way then cannot leave its half-filled trace visible to the next one.
+;;;; ------------------------------------------------------------
+
+(defclass fixed-then-gone-provider (openai-provider) ()
+  (:documentation "404s on any model but its own, and goes off the network the
+moment it is handed the right one — the endpoint that dies during recovery."))
+
+(defmethod send-completion-request ((p fixed-then-gone-provider) messages
+                                    &key model &allow-other-keys)
+  (declare (ignore messages))
+  (push (list (provider-default-model p) model) *models-seen*)
+  (if (equal model (provider-default-model p))
+      (error 'provider-network-error :provider p :url "http://nowhere/v1"
+                                     :operation :completion)
+      (error 'provider-model-not-found-error
+             :provider p :requested-model model :status-code 404
+             :message "Model not found")))
+
+(fiveam:test a-correction-survives-a-no-model-failover
+  "A MODEL CORRECTED BY USE-MODEL MUST NOT BE UNDONE BY A LATER FAILOVER.
+
+The sequence is ordinary and the how-to teaches both halves of it: a model name
+is wrong, a handler fixes it with USE-MODEL, and the endpoint then goes down and
+the same code fails over with the one-argument form because both endpoints serve
+the same model. Measured before the fix:
+
+    ((:PRIMARY \"typo\") (:PRIMARY \"good\") (:FALLBACK \"typo\"))
+
+The fallback is handed the name that was already known to be wrong, and answers
+with a 404 that reads like a fallback problem. Where the fallback can also drop
+off the network after being corrected, the pair does not terminate at all.
+
+DISCRIMINATING: the fallback is PERMISSIVE and records, so the assertion is on
+the name it was handed rather than on whether the request succeeded — a refusing
+fixture would fail the run without saying which name arrived. The corrected name
+and the caller's original are different strings, so 'kept the correction' and
+'reverted' cannot be the same green."
+  (let ((*models-seen* nil))
+    (let ((primary (make-instance 'fixed-then-gone-provider :model "the-real-model"))
+          (mirror  (make-instance 'permissive-recording-provider
+                                  :model "the-mirrors-own-default")))
+      (handler-bind
+          ((provider-model-not-found-error
+             (lambda (c)
+               (let ((r (find-restart 'cl-llm-provider:use-model c)))
+                 (when r (invoke-restart r "the-real-model")))))
+           (provider-network-error
+             (lambda (c)
+               (let ((r (find-restart 'cl-llm-provider:use-fallback-provider c)))
+                 ;; ONE argument: the same model on both endpoints, which is the
+                 ;; case the one-argument form exists for.
+                 (when r (invoke-restart r mirror))))))
+        (complete '((:role "user" :content "hi"))
+                  :provider primary :model "a-model-with-a-typo"))
+      (fiveam:is (equal "the-real-model" (second (first *models-seen*)))
+                 "the fallback was handed the CORRECTED model")
+      (fiveam:is (not (equal "a-model-with-a-typo" (second (first *models-seen*))))
+                 "and not the typo the caller originally passed"))))
+
+(fiveam:test an-explicit-nil-fallback-model-defers-to-the-new-provider
+  "(INVOKE-RESTART R FB NIL) MUST NOT PUT \"model\": null ON THE WIRE.
+
+A generic recovery handler writes (invoke-restart r fb (getf config :model)),
+and a config that names no model yields NIL. NIL is supplied-p true, so before
+the fix MOD became NIL and travelled: SEND-COMPLETION-REQUEST writes the model
+into the body unconditionally, so the request went out asking for null.
+
+NIL already means 'no explicit model, let resolution decide' everywhere else in
+this library — %RESOLVE-MODEL is (or model ...) — and the restart is the only
+place it meant something else.
+
+DISCRIMINATING: the fallback's own default is a different string from the
+caller's model, so 'resolved against the new provider' is distinguishable from
+both 'kept the caller's' and 'sent NIL'."
+  (let ((*models-seen* nil))
+    (let ((local  (make-instance 'unreachable-test-provider :model "the-callers-model"))
+          (mirror (make-instance 'permissive-recording-provider
+                                 :model "the-fallbacks-own-default")))
+      (handler-bind
+          ((provider-network-error
+             (lambda (c)
+               (let ((r (find-restart 'cl-llm-provider:use-fallback-provider c)))
+                 (when r (invoke-restart r mirror nil))))))
+        (complete '((:role "user" :content "hi"))
+                  :provider local :model "the-callers-model"))
+      (fiveam:is (not (null (second (first *models-seen*))))
+                 "NIL did not reach the provider as a model name")
+      (fiveam:is (equal "the-fallbacks-own-default" (second (first *models-seen*)))
+                 "an explicit NIL means: let the new provider decide"))))
+
+;;;; ------------------------------------------------------------
+;;;; Section 7: the model reaches the condition WITHOUT being passed
+;;;;
+;;;; The naming tests in section 5 call HANDLE-HTTP-ERROR with :REQUESTED-MODEL
+;;;; directly. NOTHING IN SRC DOES THAT. Every live path — PROVIDER-HTTP-POST,
+;;;; shared by all six providers, and the three streaming methods — calls it with
+;;;; three positional arguments, and the model reaches the condition only through
+;;;; *REQUESTED-MODEL*. So the tested branch was the unused one: removing both
+;;;; bindings from API.LISP left 1078 checks green.
+;;;;
+;;;; These fixtures call HANDLE-HTTP-ERROR the way production does, from inside
+;;;; COMPLETE and EMBEDDING, and pass no model at all.
+;;;; ------------------------------------------------------------
+
+(defun %a-404-body ()
+  (let ((h (make-hash-table :test #'equal)))
+    (setf (gethash "error" h) "model not found")
+    h))
+
+(defclass posts-a-404-provider (openai-provider) ())
+
+(defmethod send-completion-request ((p posts-a-404-provider) messages
+                                    &key &allow-other-keys)
+  (declare (ignore messages))
+  ;; Three positional arguments and no model, exactly as PROVIDER-HTTP-POST does,
+  ;; because PROVIDER-HTTP-POST has no model in scope to pass.
+  (handle-http-error 404 (%a-404-body) p))
+
+(defclass posts-a-404-embedding-provider (openai-provider) ())
+
+(defmethod send-embedding-request ((p posts-a-404-embedding-provider) input
+                                   &key &allow-other-keys)
+  (declare (ignore input))
+  (handle-http-error 404 (%a-404-body) p))
+
+(fiveam:test complete-names-the-model-without-passing-it
+  "THE PIN FOR *REQUESTED-MODEL*, the mechanism that actually runs.
+
+DISCRIMINATING: the provider passes NO model to HANDLE-HTTP-ERROR, so the only
+route from the caller's :MODEL to the condition is COMPLETE's binding. Delete
+that binding and the report goes back to \"Model not found: NIL\" and this fails.
+The assertion is on the printed REPORT, which is what reaches a spool file."
+  (let ((caught nil))
+    (handler-case
+        (complete '((:role "user" :content "hi"))
+                  :provider (make-instance 'posts-a-404-provider :model "d" :api-key "k")
+                  :model "the-model-i-asked-for")
+      (provider-model-not-found-error (c) (setf caught c)))
+    (fiveam:is (not (null caught)) "the 404 classified as model-not-found")
+    (when caught
+      (fiveam:is (search "the-model-i-asked-for" (princ-to-string caught))
+                 "COMPLETE's *requested-model* binding named the model in the report"))))
+
+(fiveam:test embedding-names-the-model-without-passing-it-either
+  "EMBEDDING got the restart half of the contract and not the diagnostic half.
+
+Commit 8a3af69's premise is one contract across all three entry points. It
+equalised the restarts and left EMBEDDING alone in reporting
+
+    Model not found: NIL
+
+which is the defect the commit before it existed to remove. Same mechanism, same
+three-argument call, one missing binding."
+  (let ((caught nil))
+    (handler-case
+        (embedding "hi"
+                   :provider (make-instance 'posts-a-404-embedding-provider
+                                            :model "d" :api-key "k")
+                   :model "the-embedding-model-i-asked-for")
+      (provider-model-not-found-error (c) (setf caught c)))
+    (fiveam:is (not (null caught)) "the 404 classified as model-not-found")
+    (when caught
+      (fiveam:is (search "the-embedding-model-i-asked-for" (princ-to-string caught))
+                 "EMBEDDING names what it could not find, like COMPLETE does"))))
+
+;;;; ------------------------------------------------------------
+;;;; Section 8: the remaining corners of "one contract, three entry points"
+;;;;
+;;;; USE-MODEL was pinned on COMPLETE and COMPLETE-STREAM, and the one-argument
+;;;; control existed only for COMPLETE. The claim being defended names three
+;;;; entry points; these close the two that were asserted and not tested.
+;;;; ------------------------------------------------------------
+
+(defclass fussy-embedding-provider (openai-provider) ())
+
+(defmethod send-embedding-request ((p fussy-embedding-provider) input
+                                   &key model &allow-other-keys)
+  (declare (ignore input))
+  (push (list (provider-default-model p) model) *models-seen*)
+  (unless (equal model (provider-default-model p))
+    (error 'provider-model-not-found-error
+           :provider p :requested-model model :status-code 404
+           :message "Model not found"))
+  (yason:parse "{\"data\":[{\"embedding\":[0.1,0.2],\"index\":0}],\"model\":\"m\",\"usage\":{\"prompt_tokens\":1,\"total_tokens\":1}}"))
+
+(fiveam:test use-model-is-offered-on-the-embedding-path-too
+  "The third entry point. Two of three were pinned; the claim covers three."
+  (let ((*models-seen* nil))
+    (let ((p (make-instance 'fussy-embedding-provider :model "the-real-model")))
+      (handler-bind
+          ((provider-model-not-found-error
+             (lambda (c)
+               (let ((r (find-restart 'cl-llm-provider:use-model c)))
+                 (when r (invoke-restart r "the-real-model"))))))
+        (embedding "hi" :provider p :model "a-typo"))
+      (fiveam:is (= 2 (length *models-seen*))
+                 "two attempts — the typo, then the correction")
+      (fiveam:is (equal "the-real-model" (second (first *models-seen*)))
+                 "the second carried what the handler supplied"))))
+
+(fiveam:test the-no-model-failover-default-is-unchanged-on-every-entry-point
+  "THE CONTROL, extended to the two entry points that never had one.
+
+Someone 'helpfully' flipping the no-model branch to prefer the new provider's own
+default would break every caller failing over between two endpoints serving the
+same model — and on COMPLETE-STREAM and EMBEDDING nothing would have failed. That
+is the same blind spot the old use-fallback-provider-reissues-request had, in two
+more places.
+
+The fallback's own default is deliberately a DIFFERENT string from the caller's
+model, which is the whole reason this test can see anything."
+  ;; COMPLETE-STREAM
+  (let ((*models-seen* nil))
+    (handler-bind
+        ((provider-network-error
+           (lambda (c)
+             (let ((r (find-restart 'cl-llm-provider:use-fallback-provider c)))
+               (when r (invoke-restart r (make-instance 'recording-stream-provider
+                                                        :model "the-fallbacks-own-default")))))))
+      (complete-stream '((:role "user" :content "hi"))
+                       :provider (make-instance 'unreachable-stream-provider :model "dead")
+                       :model "the-callers-model"))
+    (fiveam:is (equal "the-callers-model" (second (first *models-seen*)))
+               "COMPLETE-STREAM's no-model failover keeps the caller's model"))
+  ;; EMBEDDING
+  (let ((*models-seen* nil))
+    (handler-bind
+        ((provider-network-error
+           (lambda (c)
+             (let ((r (find-restart 'cl-llm-provider:use-fallback-provider c)))
+               (when r (invoke-restart r (make-instance 'recording-embedding-provider
+                                                        :model "the-fallbacks-own-default")))))))
+      (embedding "hi"
+                 :provider (make-instance 'unreachable-embedding-provider :model "dead")
+                 :model "the-callers-model"))
+    (fiveam:is (equal "the-callers-model" (second (first *models-seen*)))
+               "EMBEDDING's no-model failover keeps the caller's model")))

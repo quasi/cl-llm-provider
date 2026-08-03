@@ -79,6 +79,56 @@ its replacement control repeated the mistake."
 name and record what each was handed; the cross-provider fixture REFUSES anything
 but its own, so a restart that carried the wrong model cannot pass by accident."
                    :violates :failover-can-cross-providers)
+                  (:two-restarts-that-cannot-see-each-other
+                   "USE-MODEL wrote MOD; a one-argument USE-FALLBACK-PROVIDER
+recomputed MOD from MODEL, the caller's original keyword argument, which USE-MODEL
+cannot reach. So a handler that corrected a model name and then failed over sent
+the BROKEN name to the fallback. Measured: ((:primary \"typo\") (:primary \"good\")
+(:fallback \"typo\")). The interaction was created by the fix that added the second
+restart — with one writer of MOD, 'recompute from MODEL' and 'keep MOD' were the
+same behaviour, so no existing test could distinguish them. Where the fallback can
+also drop off the network after being corrected, the pair does not terminate."
+                   :mitigation "Both restarts write MODEL as well as MOD, so there
+is one source of truth for the no-model branch to re-resolve from. Pinned by a
+test that invokes BOTH restarts against a single call — the case neither
+single-restart test could reach."
+                   :violates :failover-can-cross-providers)
+                  (:an-explicit-nil-model-reached-the-wire
+                   "(INVOKE-RESTART R FB NIL) set MOD to NIL — supplied-p is true
+for NIL — and SEND-COMPLETION-REQUEST writes the model into the body
+unconditionally, so the request asked for \"model\": null. The shape that produces
+it, (invoke-restart r fb (getf config :model)), is what a generic recovery handler
+naturally writes."
+                   :mitigation "The supplied model goes through %RESOLVE-MODEL, so
+NIL means 'let the new provider decide' here as it does everywhere else in this
+library."
+                   :violates :failover-can-cross-providers)
+                  (:the-model-only-reached-the-condition-on-two-of-three-paths
+                   "EMBEDDING never bound *REQUESTED-MODEL*, so an embedding 404
+still reported \"Model not found: NIL\" after the commit whose premise was one
+contract across all three entry points. It equalised the restarts and left the
+diagnostics unequal."
+                   :mitigation "EMBEDDING binds it inside its loop like COMPLETE
+and COMPLETE-STREAM."
+                   :violates :reliable)
+                  (:the-tested-branch-was-the-unused-one
+                   "The :REQUESTED-MODEL keyword on HANDLE-HTTP-ERROR has no caller
+in SRC — PROVIDER-HTTP-POST, shared by all six providers, has no model in scope.
+Every live path reaches the condition through *REQUESTED-MODEL*, and both tests of
+the naming fix passed the keyword directly. Removing both bindings from API.LISP
+left 1078 checks green: the mechanism that runs was tested nowhere, and the one
+tested twice runs nowhere."
+                   :mitigation "Tests that call HANDLE-HTTP-ERROR the way a
+provider does — three positional arguments, no model — from inside COMPLETE and
+EMBEDDING. Verified by removing the binding: the test fails."
+                   :violates :reliable)
+                  (:the-report-string-is-the-only-introspectable-channel
+                   "USE-FALLBACK-PROVIDER gained a second argument and its :REPORT
+still read \"Re-issue the request with a different provider\". A restart-case
+clause's lambda list cannot be read back, and AVAILABLE-RECOVERY-OPTIONS returns
+:NAME and :REPORT — so no agent could discover the argument existed."
+                   :mitigation "The report names the optional model."
+                   :violates :agent-friendly)
                   (:no-way-to-correct-a-model-name
                    "PROVIDER-MODEL-NOT-FOUND-ERROR offered RETRY, which repeats the
 same 404, and USE-FALLBACK-PROVIDER, which is a sledgehammer for a typo — and

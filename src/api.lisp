@@ -233,7 +233,12 @@ Example:
 
                 response)))
         (use-fallback-provider (fallback &optional (fallback-model nil fallback-model-p))
-          :report "Re-issue the request with a different provider"
+          ;; THE REPORT IS THE ONLY CHANNEL. A restart-case clause's lambda list
+          ;; cannot be read back, and AVAILABLE-RECOVERY-OPTIONS — the documented
+          ;; introspection tool for agents — returns :NAME and :REPORT and nothing
+          ;; else. A report that does not mention the model argument means no
+          ;; agent can discover it exists.
+          :report "Re-issue the request with a different provider, optionally with a different model"
           :interactive (lambda ()
                          (format *query-io* "Enter fallback provider keyword: ")
                          (finish-output *query-io*)
@@ -254,10 +259,19 @@ Example:
           ;; serve the SAME model — a behaviour change no existing test could have
           ;; caught, because the fixture used one model string in three places. A
           ;; caller who wants the model to change now says which.
-          (setf prov (%coerce-provider fallback)
-                mod (if fallback-model-p
-                        fallback-model
-                        (%resolve-model model prov))))
+          ;; WRITES MODEL, NOT ONLY MOD, and that is load-bearing. MODEL is what
+          ;; the no-model branch below re-resolves from; a restart that wrote only
+          ;; MOD would be undone by the next one-argument failover, which is
+          ;; exactly what USE-MODEL used to suffer.
+          ;;
+          ;; RESOLVED RATHER THAN ASSIGNED, so an explicit NIL — the shape
+          ;; (invoke-restart r fb (getf config :model)) produces when the config
+          ;; names no model — means "let the new provider decide" here as it does
+          ;; everywhere else, instead of putting "model": null on the wire.
+          (setf prov (%coerce-provider fallback))
+          (when fallback-model-p
+            (setf model fallback-model))
+          (setf mod (%resolve-model model prov)))
         (use-model (new-model)
           :report "Re-issue the request with a different model"
           :interactive (lambda ()
@@ -274,7 +288,14 @@ Example:
           ;; RETRY (which repeats the same 404) and USE-FALLBACK-PROVIDER (a
           ;; sledgehammer for a typo) and nothing that could fix the one thing
           ;; actually wrong.
-          (setf mod new-model))))))
+          ;; MODEL TOO. A correction that lived only in MOD was silently reverted
+          ;; by any later one-argument USE-FALLBACK-PROVIDER, which recomputes
+          ;; from MODEL — so a handler that fixed a name and then failed over
+          ;; sent the broken name to the fallback. Neither restart could see the
+          ;; other; adding a second writer to MOD is what made "recompute from
+          ;; MODEL" and "keep MOD" stop being the same behaviour.
+          (setf model new-model
+                mod (%resolve-model new-model prov)))))))
 
 (defun/i embedding (input &key provider model dimensions)
   "Generate vector embeddings for text.
@@ -302,8 +323,15 @@ Example:
     (loop
       (restart-case
           (return
-            ;; Send request and parse response (with performance tracking if enabled)
-            (if *performance-profiling*
+            ;; Bound inside the loop for the same reason as in COMPLETE: a
+            ;; model-not-found must be able to name what it could not find, and
+            ;; a model corrected by USE-MODEL must be the one a second failure
+            ;; names. Missing here, an embedding 404 reported "Model not found:
+            ;; NIL" — the defect the restart contract was equalised to remove,
+            ;; left standing on one of the three entry points.
+            (let* ((*requested-model* mod))
+              ;; Send request and parse response (with performance tracking if enabled)
+              (if *performance-profiling*
                 (let ((*performance-stats* (make-performance-stats)))
                   (let* ((raw-response (send-embedding-request prov input
                                                                 :model mod
@@ -318,30 +346,51 @@ Example:
                 (let ((raw-response (send-embedding-request prov input
                                                              :model mod
                                                              :dimensions dimensions)))
-                  (parse-embedding-response prov raw-response))))
+                  (parse-embedding-response prov raw-response)))))
         ;; SAME CONTRACT AS COMPLETE'S, and it has to be. One restart name that takes
         ;; a model here and refuses one there is worse than either behaviour
         ;; alone: a caller writes the two-argument form, it works against
         ;; COMPLETE, and it dies on arity the first time the same recovery code
         ;; covers an embedding. Found by writing the how-to, not by a test.
         (use-fallback-provider (fallback &optional (fallback-model nil fallback-model-p))
-          :report "Re-issue the request with a different provider"
+          ;; THE REPORT IS THE ONLY CHANNEL. A restart-case clause's lambda list
+          ;; cannot be read back, and AVAILABLE-RECOVERY-OPTIONS — the documented
+          ;; introspection tool for agents — returns :NAME and :REPORT and nothing
+          ;; else. A report that does not mention the model argument means no
+          ;; agent can discover it exists.
+          :report "Re-issue the request with a different provider, optionally with a different model"
           :interactive (lambda ()
                          (format *query-io* "Enter fallback provider keyword: ")
                          (finish-output *query-io*)
                          (let ((*read-eval* nil))
                            (list (read *query-io*))))
-          (setf prov (%coerce-provider fallback)
-                mod (if fallback-model-p
-                        fallback-model
-                        (%resolve-model model prov))))
+          ;; WRITES MODEL, NOT ONLY MOD, and that is load-bearing. MODEL is what
+          ;; the no-model branch below re-resolves from; a restart that wrote only
+          ;; MOD would be undone by the next one-argument failover, which is
+          ;; exactly what USE-MODEL used to suffer.
+          ;;
+          ;; RESOLVED RATHER THAN ASSIGNED, so an explicit NIL — the shape
+          ;; (invoke-restart r fb (getf config :model)) produces when the config
+          ;; names no model — means "let the new provider decide" here as it does
+          ;; everywhere else, instead of putting "model": null on the wire.
+          (setf prov (%coerce-provider fallback))
+          (when fallback-model-p
+            (setf model fallback-model))
+          (setf mod (%resolve-model model prov)))
         (use-model (new-model)
           :report "Re-issue the request with a different model"
           :interactive (lambda ()
                          (format *query-io* "Enter model name: ")
                          (finish-output *query-io*)
                          (list (read-line *query-io*)))
-          (setf mod new-model))))))
+          ;; MODEL TOO. A correction that lived only in MOD was silently reverted
+          ;; by any later one-argument USE-FALLBACK-PROVIDER, which recomputes
+          ;; from MODEL — so a handler that fixed a name and then failed over
+          ;; sent the broken name to the fallback. Neither restart could see the
+          ;; other; adding a second writer to MOD is what made "recompute from
+          ;; MODEL" and "keep MOD" stop being the same behaviour.
+          (setf model new-model
+                mod (%resolve-model new-model prov)))))))
 
 (defun/i complete-stream (messages &key provider model max-tokens temperature
                                       system tools tool-choice stop
@@ -429,20 +478,41 @@ Example:
         ;; runs, so a recovery handler written once and reused is the normal
         ;; case rather than the unusual one.
         (use-fallback-provider (fallback &optional (fallback-model nil fallback-model-p))
-          :report "Re-issue the request with a different provider"
+          ;; THE REPORT IS THE ONLY CHANNEL. A restart-case clause's lambda list
+          ;; cannot be read back, and AVAILABLE-RECOVERY-OPTIONS — the documented
+          ;; introspection tool for agents — returns :NAME and :REPORT and nothing
+          ;; else. A report that does not mention the model argument means no
+          ;; agent can discover it exists.
+          :report "Re-issue the request with a different provider, optionally with a different model"
           :interactive (lambda ()
                          (format *query-io* "Enter fallback provider keyword: ")
                          (finish-output *query-io*)
                          (let ((*read-eval* nil))
                            (list (read *query-io*))))
-          (setf prov (%coerce-provider fallback)
-                mod (if fallback-model-p
-                        fallback-model
-                        (%resolve-model model prov))))
+          ;; WRITES MODEL, NOT ONLY MOD, and that is load-bearing. MODEL is what
+          ;; the no-model branch below re-resolves from; a restart that wrote only
+          ;; MOD would be undone by the next one-argument failover, which is
+          ;; exactly what USE-MODEL used to suffer.
+          ;;
+          ;; RESOLVED RATHER THAN ASSIGNED, so an explicit NIL — the shape
+          ;; (invoke-restart r fb (getf config :model)) produces when the config
+          ;; names no model — means "let the new provider decide" here as it does
+          ;; everywhere else, instead of putting "model": null on the wire.
+          (setf prov (%coerce-provider fallback))
+          (when fallback-model-p
+            (setf model fallback-model))
+          (setf mod (%resolve-model model prov)))
         (use-model (new-model)
           :report "Re-issue the request with a different model"
           :interactive (lambda ()
                          (format *query-io* "Enter model name: ")
                          (finish-output *query-io*)
                          (list (read-line *query-io*)))
-          (setf mod new-model))))))
+          ;; MODEL TOO. A correction that lived only in MOD was silently reverted
+          ;; by any later one-argument USE-FALLBACK-PROVIDER, which recomputes
+          ;; from MODEL — so a handler that fixed a name and then failed over
+          ;; sent the broken name to the fallback. Neither restart could see the
+          ;; other; adding a second writer to MOD is what made "recompute from
+          ;; MODEL" and "keep MOD" stop being the same behaviour.
+          (setf model new-model
+                mod (%resolve-model new-model prov)))))))

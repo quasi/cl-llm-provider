@@ -30,7 +30,7 @@ The simplest way to use Gemini:
 ```lisp
 (use-package :cl-llm-provider)
 
-(let ((provider (make-provider :gemini :default-model "gemini-3-flash-preview")))
+(let ((provider (make-provider :gemini :model "gemini-3-flash-preview")))
   (let ((response (complete '((:role "user" :content "What is Common Lisp?"))
                             :provider provider)))
     (format t "~A~%" (response-content response))))
@@ -118,10 +118,13 @@ Second: 4 × 3 = 12
 Gemini can analyze images. Supported formats: JPEG, PNG, WebP, GIF.
 
 ```lisp
-(let* ((image-data (uiop:read-file-string "path/to/image.jpg"))
-       ;; For base64-encoded images
+;; This library ships no base64 encoder — use cl-base64 (or your own).
+(let* ((bytes (with-open-file (s "path/to/image.jpg" :element-type '(unsigned-byte 8))
+                (let ((buf (make-array (file-length s) :element-type '(unsigned-byte 8))))
+                  (read-sequence buf s)
+                  buf)))
        (data-url (format nil "data:image/jpeg;base64,~A"
-                        (base64-encode image-data)))
+                         (cl-base64:usb8-array-to-base64-string bytes)))
        (provider (make-provider :gemini :model "gemini-3-flash-preview")))
 
   (let ((response
@@ -201,15 +204,15 @@ Get tokens as they're generated:
 (let ((provider (make-provider :gemini))
       (full-content ""))
 
-  (complete-streaming '((:role "user" :content "Write a haiku about Lisp"))
-                      :provider provider
-                      :callback (lambda (chunk)
-                                 (let ((delta (stream-chunk-content chunk)))
-                                   (when delta
-                                     (setf full-content
-                                           (concatenate 'string full-content delta))
-                                     (format t "~A" delta)
-                                     (force-output)))))
+  (complete-stream '((:role "user" :content "Write a haiku about Lisp"))
+                   :provider provider
+                   :on-chunk (lambda (chunk)
+                               (let ((delta (chunk-content chunk)))
+                                 (when delta
+                                   (setf full-content
+                                         (concatenate 'string full-content delta))
+                                   (format t "~A" delta)
+                                   (force-output)))))
 
   (format t "~%~%Complete text: ~A~%" full-content))
 ```
@@ -229,12 +232,13 @@ Generate 768-dimensional embeddings for text:
 
 ```lisp
 ;; Single text
-(let ((provider (make-provider :gemini :default-model "gemini-embedding-001")))
+(let ((provider (make-provider :gemini :model "gemini-embedding-001")))
   (let ((response (embedding "Common Lisp is a functional language"
                             :provider provider)))
-    (format t "Vector length: ~D~%" (length (embedding-vector response)))
-    (format t "First 5 values: ~{~,3F ~}~%"
-            (subseq (embedding-vector response) 0 5))))
+    ;; RESPONSE-EMBEDDINGS is a LIST of vectors, one per input.
+    (let ((vec (first (response-embeddings response))))
+      (format t "Vector length: ~D~%" (length vec))
+      (format t "First 5 values: ~{~,3F ~}~%" (subseq vec 0 5)))))
 ```
 
 **Output:**
@@ -247,7 +251,7 @@ First 5 values: 0.023 -0.041 0.102 -0.015 0.067
 
 ```lisp
 ;; Multiple texts in one request
-(let ((provider (make-provider :gemini :default-model "gemini-embedding-001")))
+(let ((provider (make-provider :gemini :model "gemini-embedding-001")))
   (let ((responses (embedding (list "First text"
                                     "Second text"
                                     "Third text")
@@ -360,7 +364,7 @@ View provider configuration without exposing secrets:
 ```
 
 **Output:**
-```lisp
+```
 (:TYPE :GEMINI
  :NAME "Google Gemini"
  :MODEL "gemini-3-flash-preview"
@@ -392,7 +396,7 @@ Start with fast/cheap Flash, escalate to Pro if needed:
 (let ((flash (make-provider :gemini :model "gemini-3-flash-preview"))
       (pro (make-provider :gemini :model "gemini-3-pro-preview")))
   (let ((response (complete messages :provider flash)))
-    (if (string= (response-stop-reason response) "length")
+    (if (eq (response-finish-reason response) :length)
         ;; Hit token limit, retry with Pro's larger context
         (complete messages :provider pro)
         response)))

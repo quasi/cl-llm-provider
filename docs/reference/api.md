@@ -13,7 +13,7 @@ Send a completion request to an LLM.
 ```lisp
 (complete messages &key provider model max-tokens temperature
                         system tools tool-choice stop
-                        enable-profiling)
+                        hooks on-request on-response on-error)
 → completion-response
 ```
 
@@ -27,7 +27,12 @@ Send a completion request to an LLM.
 - `:tools` (list) - Available tools
 - `:tool-choice` (keyword) - `:auto`, `:required`, tool name
 - `:stop` (list) - Stop generation at strings
-- `:enable-profiling` (boolean) - Enable timing breakdown
+- `:hooks` (hooks) - Hook set from `make-hooks`
+- `:on-request` (function) - Called with the outgoing request
+- `:on-response` (function) - Called with `(response timing)`
+- `:on-error` (function) - Called with the signalled condition
+
+Profiling is enabled by binding `*performance-profiling*`, not by a keyword.
 
 **Returns**: `completion-response` object
 
@@ -45,12 +50,12 @@ Send a completion request to an LLM.
 Get vector embeddings for text.
 
 ```lisp
-(embedding texts &key provider model dimensions)
+(embedding input &key provider model dimensions)
 → embedding-response
 ```
 
 **Parameters**:
-- `texts` (string or list) - Text(s) to embed
+- `input` (string or list) - Text(s) to embed
 - `:provider` (provider) - Provider instance
 - `:model` (string) - Model override
 - `:dimensions` (integer) - Requested output dimensions, when supported by the provider
@@ -64,24 +69,27 @@ Get vector embeddings for text.
   (length (first (response-embeddings response))))  ; Vector length
 ```
 
-### `token-count`
+### `count-tokens`
 
-Count tokens in messages or text.
+Count tokens in messages.
 
 ```lisp
-(token-count input &key provider)
+(count-tokens messages &key model provider)
 → integer
 ```
 
 **Parameters**:
-- `input` (string or list) - Text or messages to count
+- `messages` (list) - Messages to count
+- `:model` (string) - Model whose tokenizer to assume
 - `:provider` (provider) - Provider instance
+
+See also `count-tokens-with-system`, which includes a system prompt.
 
 **Returns**: Number of tokens
 
 **Example**:
 ```lisp
-(let ((tokens (token-count '((:role "user" :content "Hello")))))
+(let ((tokens (count-tokens '((:role "user" :content "Hello")))))
   (format t "Tokens: ~A~%" tokens))
 ```
 
@@ -94,7 +102,7 @@ Count tokens in messages or text.
 Create a provider instance.
 
 ```lisp
-(make-provider type &rest options)
+(make-provider provider-type &key api-key base-url model options)
 → provider
 ```
 
@@ -209,12 +217,13 @@ Define a tool that LLMs can call.
   :handler (lambda (args) ...))
 ```
 
-### `get-tool`
+### `find-tool-by-name`
 
-Get a registered tool.
+Get a registered tool. Tool functions live in the `cl-llm-provider.tools`
+package, not `cl-llm-provider`.
 
 ```lisp
-(get-tool name) → tool or nil
+(find-tool-by-name name &key registry) → tool or nil
 ```
 
 ### `list-tools`
@@ -222,7 +231,7 @@ Get a registered tool.
 List all registered tools.
 
 ```lisp
-(list-tools) → list of tools
+(list-tools registry &key categories safety-level) → list of tools
 ```
 
 ### `execute-tool`
@@ -238,7 +247,8 @@ Execute a resolved tool definition for a model-requested tool call.
 For completion responses containing multiple tool calls, use:
 
 ```lisp
-(execute-tool-calls response &key registry approval-callback max-safety-level)
+(execute-tool-calls response &key registry skip-approval skip-validation
+                              approval-callback max-safety-level on-missing-tool)
 → list of (tool-call . result)
 ```
 
@@ -257,16 +267,15 @@ Result from `complete`.
 - `(response-message response)` - Full assistant message for continuation; Anthropic tool-use responses carry content-block plists
 - `(response-tool-calls response)` - List of tool calls (if any)
 - `(response-finish-reason response)` - Why it stopped (`:stop`, `:length`, etc.)
-- `(response-token-count response)` - Tokens used
-- `(response-provider response)` - Provider keyword
-- `(response-metadata response)` - Provider-specific metadata
-- `(response-profiling response)` - Timing breakdown (if enabled)
+- `(response-usage response)` - Token usage plist `(:prompt-tokens N :completion-tokens M :total-tokens T)`
+- `(response-metadata response)` - Provider-specific metadata plist
+- `(response-performance response)` - Timing plist `(:encode-time :api-time :decode-time)`, in seconds, when `*performance-profiling*` is bound to T
 
 **Example**:
 ```lisp
 (let ((response (complete messages)))
   (format t "Content: ~A~%" (response-content response))
-  (format t "Tokens: ~A~%" (response-token-count response))
+  (format t "Tokens: ~A~%" (getf (response-usage response) :total-tokens))
   (when (response-tool-calls response)
     (dolist (call (response-tool-calls response))
       (format t "Tool: ~A~%" (tool-call-name call)))))
@@ -274,11 +283,11 @@ Result from `complete`.
 
 ### Tool Response Objects
 
-**Tool Definition** (from `get-tool`):
+**Tool Definition** (from `find-tool-by-name`):
 - `(tool-name tool)` - Tool name
 - `(tool-description tool)` - Description
 - `(tool-parameters tool)` - Parameter definitions
-- `(tool-required-parameters tool)` - Required params
+- `(tool-required-params tool)` - Required params
 - `(tool-handler tool)` - Handler function
 - `(tool-safety-level tool)` - Safety level keyword
 - `(tool-categories tool)` - Category list
@@ -288,47 +297,144 @@ Result from `complete`.
 
 ## Error Types
 
-All inherit from `error`. Catch with `handler-case`:
+All inherit from `llm-provider-error`, which inherits from `error`. The names are
+prefixed — there is no bare `network-error` or `rate-limit-error`.
 
 ```lisp
 (handler-case
-  (complete messages)
+    (complete messages)
 
-  ;; Transient errors (safe to retry)
-  (rate-limit-error (e)
-    (sleep 60)
-    (complete messages))
+  ;; Transient (safe to retry)
+  (provider-rate-limit-error (e)
+    (sleep (or (error-retry-after e) 60)))
 
-  (timeout-error (e)
-    (complete messages))
+  (provider-timeout-error (e)
+    (format t "Timed out: ~A~%" e))
 
-  (network-error (e)
-    (complete messages))
+  (provider-network-error (e)
+    (format t "Could not reach ~A~%" (error-url e)))
 
-  ;; Permanent errors (don't retry)
-  (authentication-error (e)
+  ;; Permanent (don't retry)
+  (provider-authentication-error (e)
     (format t "Auth failed: ~A~%" (error-message e)))
 
-  (provider-error (e)
-    (format t "Provider error: ~A~%" (error-message e)))
-
-  ;; Catch all
-  (error (e)
-    (format t "Unknown error: ~A~%" e)))
+  (provider-api-error (e)
+    (format t "Provider error: ~A~%" (error-message e))))
 ```
 
-**Error Types**:
-- `rate-limit-error` - Too many requests
-- `timeout-error` - Request timed out
-- `network-error` - Connection failed
-- `authentication-error` - Invalid credentials
-- `provider-error` - API returned error
-- `provider-configuration-error` - Missing config
-- `validation-error` - Parameter validation failed
+**Hierarchy**:
 
-**Error Accessors**:
-- `(error-message error)` - Error message string
-- `(error-status-code error)` - HTTP status (if applicable)
+| Condition | Meaning |
+|---|---|
+| `llm-provider-error` | Root of everything below |
+| `provider-configuration-error` | Missing or invalid configuration |
+| `provider-api-error` | The server answered, with an error |
+| `provider-rate-limit-error` | Too many requests |
+| `provider-authentication-error` | Invalid credentials |
+| `provider-model-not-found-error` | No such model on that provider |
+| `provider-context-length-error` | Prompt exceeds the context window |
+| `provider-content-filter-error` | Refused by a content filter |
+| `provider-overloaded-error` | Server temporarily overloaded |
+| `provider-invalid-response-error` | Response was not the expected shape |
+| `provider-network-error` | The server did not answer |
+| `provider-timeout-error` | Request or response exceeded the time limit |
+| `provider-json-parse-error` | Response body was not valid JSON |
+| `llm-stream-error` | Streaming failures (`stream-interrupted-error`, `stream-parse-error`) |
+
+**Accessors**:
+- `(error-message e)` — message string
+- `(error-status-code e)` — HTTP status, on `provider-api-error` and subtypes
+- `(error-provider e)` — the provider instance
+- `(error-retry-after e)` — seconds from the server's `Retry-After`, or `NIL`
+- `(error-requested-model e)` — on `provider-model-not-found-error`
+- `(error-url e)`, `(error-operation e)` — on `provider-network-error`
+- `(transient-error-p e)` — whether retrying could plausibly succeed
+
+---
+
+## Recovery
+
+### Restarts
+
+Use `handler-bind`, **not** `handler-case`: `handler-case` unwinds before its body
+runs, which disestablishes every restart, so `invoke-restart` there signals
+`control-error`.
+
+| Restart | Established by | Arguments | Effect |
+|---|---|---|---|
+| `use-value` | HTTP 401 | new API key | Set the key on the provider and re-issue |
+| `wait-and-retry` | HTTP 429 | — | Sleep `retry-after`, then re-issue |
+| `retry` | HTTP 429, and every other status except 401 | — | Re-issue the identical request |
+| `use-model` | `complete`, `embedding`, `complete-stream` | model name | Re-issue against the same provider with a different model |
+| `use-fallback-provider` | `complete`, `embedding`, `complete-stream` | provider, *optional* model | Re-issue against a different provider |
+| `skip-tool` | `execute-tool-calls`, tool name not in registry | — | Skip that call and carry on |
+| `use-error-result` | `execute-tool`, handler failure | — | Record the error as the result |
+| `retry-execution` | `execute-tool`, handler failure | — | Run the handler again |
+| `use-value` | HTTP 401, and `execute-tool` handler failure | new key / any value | Substitute a value and re-issue |
+
+A 401 offers only `use-value` — retrying with the same key fails identically.
+`provider-overloaded-error` falls through the generic branch and offers plain
+`retry`, not `wait-and-retry`.
+
+The three tool-execution restart names live in `cl-llm-provider.tools` and are
+**not exported**, so from another package name them explicitly:
+`(find-restart 'cl-llm-provider.tools::skip-tool c)`. `use-value` needs no
+qualification — it is the standard `cl:use-value`.
+
+```lisp
+(handler-bind
+    ((provider-network-error
+       (lambda (c)
+         (let ((r (find-restart 'use-fallback-provider c)))
+           ;; Both arguments whenever the fallback is a different service —
+           ;; the dead endpoint's model name means nothing to it.
+           (when r (invoke-restart r *cloud* "openai/gpt-oss-120b"))))))
+  (complete messages :provider *local* :model "local-model-name"))
+```
+
+Omitting the model keeps the caller's and re-resolves it against the new
+provider, which is correct only when both endpoints serve the same model.
+
+`(available-recovery-options condition)` returns the live restarts as plists of
+`:name` and `:report`, for discovering them at runtime.
+
+### `with-auto-recovery`
+
+```lisp
+(with-auto-recovery (&key max-retries backoff-base fallback-providers on-retry)
+  &body body)
+```
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `max-retries` | 3 | Retries on transient errors only |
+| `backoff-base` | 1.0 | Exponential backoff multiplier, seconds |
+| `fallback-providers` | `nil` | Entries tried after retries are exhausted |
+| `on-retry` | `nil` | `(lambda (condition attempt) ...)`; `attempt` is 0 on a fallback switch |
+
+Each fallback entry is a provider, or `(provider . model)` / `(provider model)`.
+**Name the model whenever the fallback is a different service**; a bare entry
+keeps the caller's model.
+
+```lisp
+(with-auto-recovery (:max-retries 3
+                     :fallback-providers (list (cons *cloud* "openai/gpt-oss-120b")))
+  (complete messages :provider *local* :model "local-model-name"))
+```
+
+Retries re-execute `body`. The fallback switch does not — it invokes
+`use-fallback-provider`, so only the failing request is re-issued and side effects
+earlier in `body` are not repeated. Because it uses the restart, it also reaches a
+`body` that passes `:provider` explicitly.
+
+For a `body` with no LLM call in scope, there is no restart to invoke and the
+macro rebinds `*default-provider*` and re-executes `body` instead.
+
+Do not nest inside another `handler-bind` that handles `llm-provider-error` — the
+outer handler fires first.
+
+See [How-To: Error Handling](../how-to/error-handling.md) and
+[Local models and failover](../how-to/local-models-and-failover.md).
 
 ---
 
@@ -351,11 +457,15 @@ All inherit from `error`. Catch with `handler-case`:
 ;; Set default model
 (setf cl-llm-provider:*default-model* "claude-3-sonnet-20240229")
 
-;; Disable token counting
-(setf cl-llm-provider:*enable-token-counting* nil)
+;; Defaults applied when a call does not specify them
+(setf cl-llm-provider:*default-max-tokens* 4096)
+(setf cl-llm-provider:*default-temperature* 1.0)
 
-;; Set HTTP timeout
-(setf dexador:*default-connect-timeout* 30)
+;; Enable timing collection (see Profiling, below)
+(setf cl-llm-provider:*performance-profiling* t)
+
+;; Per-request HTTP read timeout, in seconds
+(make-provider :openai :options '(:timeout 120))
 ```
 
 ---
@@ -364,23 +474,26 @@ All inherit from `error`. Catch with `handler-case`:
 
 ### Performance Timing
 
-Enable with `:enable-profiling t`:
+Enable by binding `*performance-profiling*` around the call — there is no
+`:enable-profiling` keyword:
 
 ```lisp
-(let ((response (complete messages :enable-profiling t)))
-  (when (response-profiling response)
-    (let ((prof (response-profiling response)))
-      (format t "Encode: ~Ams~%" (getf prof :encode-time))
-      (format t "API: ~Ams~%" (getf prof :api-time))
-      (format t "Decode: ~Ams~%" (getf prof :decode-time))
-      (format t "Total: ~Ams~%" (getf prof :total-time)))))
+(let* ((*performance-profiling* t)
+       (response (complete messages)))
+  (let ((prof (response-performance response)))
+    (when prof
+      (format t "Encode: ~,4Fs~%" (getf prof :encode-time))
+      (format t "API:    ~,4Fs~%" (getf prof :api-time))
+      (format t "Decode: ~,4Fs~%" (getf prof :decode-time)))))
 ```
 
-**Profiling Fields**:
-- `:encode-time` - Time to format request
-- `:api-time` - Time waiting for API response
-- `:decode-time` - Time to parse response
-- `:total-time` - Total elapsed time
+**Profiling Fields** (seconds, as floats):
+- `:encode-time` - Time to build and encode the request
+- `:api-time` - Time waiting for the API response
+- `:decode-time` - Time to parse the response
+
+There is no `:total-time`; sum the three, or time the call yourself if you want
+wall-clock including retries.
 
 ---
 
@@ -396,16 +509,18 @@ Enable with `:enable-profiling t`:
 (list :role "assistant" :content "Hi there")
 
 ;; Build conversation
-(let ((messages '()))
-  (push (list :role "user" :content "Q1") messages)
-  (push (response-message response1) messages)
+(let* ((messages (list (list :role "user" :content "Q1")))
+       (answer (complete messages)))
+  (push (response-message answer) messages)
   (push (list :role "user" :content "Q2") messages)
   (reverse messages))
 ```
 
 ### Tool Parameter Types
 
-```lisp
+Parameter specs are plists, written inside a quoted list in `define-tool`:
+
+```
 ;; String
 (:name "query" :type :string)
 
@@ -430,16 +545,17 @@ Enable with `:enable-profiling t`:
 (complete '((:role "user" :content "Hello")))
 
 ;; 2. Multi-turn conversation
-(complete (list
-  (list :role "user" :content "Q1")
-  (response-message response1)
-  (list :role "user" :content "Q2")))
+(let ((first-answer (complete (list (list :role "user" :content "Q1")))))
+  (complete (list
+    (list :role "user" :content "Q1")
+    (response-message first-answer)
+    (list :role "user" :content "Q2"))))
 
 ;; 3. With tools
-(complete messages :tools (list (get-tool "search")))
+(complete messages :tools (list (find-tool-by-name "search")))
 
 ;; 4. Token counting
-(token-count messages)
+(count-tokens messages)
 
 ;; 5. Switch providers
 (complete messages :provider (make-provider :openai))
@@ -447,7 +563,12 @@ Enable with `:enable-profiling t`:
 ;; 6. Error handling
 (handler-case
   (complete messages)
-  (rate-limit-error (e) (sleep 60) (complete messages)))
+  (provider-rate-limit-error (e) (sleep (or (error-retry-after e) 60))))
+
+;; 7. Retries and failover
+(with-auto-recovery (:max-retries 3
+                     :fallback-providers (list (cons (make-provider :openai) "gpt-4o")))
+  (complete messages))
 ```
 
 ---

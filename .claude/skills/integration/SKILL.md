@@ -44,7 +44,7 @@ A unified Common Lisp interface for multiple LLM providers. Write LLM code once,
 
 **Tool Calling**: Define tools with `define-tool`, pass via `:tools` parameter. Tool names must match `^[a-zA-Z0-9_-]+$`. Every tool-call needs a matching tool-result.
 
-**Error Handling**: Errors signal conditions (not return values). Use `handler-bind`/`handler-case` with restarts like `retry-request`, `use-fallback-provider`, `use-model`, `skip-tool-call`. Failing over to a *different service* takes both arguments — `(invoke-restart r cloud-provider "their/model-name")` — because the dead endpoint's model name means nothing to the fallback.
+**Error Handling**: Errors signal conditions (not return values). Use `handler-bind` — **not `handler-case`** — with restarts like `retry-request`, `use-fallback-provider`, `use-model`, `skip-tool-call`: `handler-case` unwinds the stack before its body runs, which disestablishes every restart, so `invoke-restart` there signals `control-error`. Failing over to a *different service* takes both arguments — `(invoke-restart r cloud-provider "their/model-name")` — because the dead endpoint's model name means nothing to the fallback. For declarative retries plus failover, `with-auto-recovery` takes `(provider . model)` entries in `:fallback-providers`.
 
 ## Key API
 

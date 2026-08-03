@@ -166,7 +166,5 @@ discovering the difference in your output quality.
 
 ## See also
 
-- [Error handling](error-handling.md) — the full condition hierarchy and how to
-  handle each class (it does not cover restarts; the ones above are the whole set
-  that matter for failover)
+- [Error handling](error-handling.md) — the full condition hierarchy and every restart
 - [Adding a provider](add-provider.md) — when OpenAI-shaped is not shaped enough

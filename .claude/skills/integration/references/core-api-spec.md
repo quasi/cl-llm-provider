@@ -540,16 +540,60 @@ condition
   (complete messages :provider local-provider :model "gemma-4-26B-A4B-it-QAT-MLX-4bit"))
 ```
 
-**`use-model`** (established by `complete` / `complete-stream`):
+**`use-model`** (established by `complete` / `complete-stream` / `embedding`):
 - Available when: any error is signaled during a request; the one it is for is
   `provider-model-not-found-error`
 - Action: Re-issues the request against the **same** provider with a different model
-- Argument: Model name (string)
+- Argument: Model name (string). `NIL` means "use the provider's own default".
 - Returns: Result of the retry
-- Contract: sets the model used by the next attempt, provider unchanged
+- Contract: sets the model used by the next attempt, provider unchanged. The
+  correction also SURVIVES a later one-argument `use-fallback-provider` — both
+  restarts write the same model, so failing over after a correction carries the
+  corrected name, not the one you started with.
 - Use this rather than `use-fallback-provider` when the model name is the only
   thing wrong. Changing provider to fix a typo is a sledgehammer, and `retry`
   repeats the same 404.
+
+### Macro: `with-auto-recovery`
+
+Declarative retries plus failover, for callers who do not want to write a handler.
+
+**Signature**:
+```lisp
+(with-auto-recovery (&key max-retries backoff-base fallback-providers on-retry)
+  &body body)
+```
+
+**Parameters**:
+- `max-retries` — integer, default 3. Retries on transient errors only
+  (`transient-error-p`).
+- `backoff-base` — real, default 1.0. Exponential backoff multiplier in seconds.
+- `fallback-providers` — list of entries tried after retries are exhausted. Each
+  entry is a provider, or `(provider . model)` / `(provider model)`.
+  **Name the model whenever the fallback is a different service**, for the same
+  reason as `use-fallback-provider`: a bare entry keeps the caller's model.
+- `on-retry` — `(lambda (condition attempt) ...)`, called with `attempt` 0 on a
+  fallback switch.
+
+**Contract**:
+- Retries RE-EXECUTE `body`. The fallback switch DOES NOT — it invokes the
+  `use-fallback-provider` restart, so only the failing request is re-issued and
+  side effects earlier in `body` are not repeated.
+- Because it uses the restart, it reaches a `body` that passes `:provider`
+  explicitly. A `*default-provider*` rebinding could not.
+- For a `body` with no LLM call in scope — one that signals an
+  `llm-provider-error` itself — there is no restart to invoke, and the macro
+  rebinds `*default-provider*` and re-executes `body` instead.
+
+```lisp
+(with-auto-recovery (:max-retries 3
+                     :fallback-providers (list (cons cloud-provider "openai/gpt-oss-120b")))
+  (complete messages :provider local-provider :model "gemma-4-26B-A4B-it-QAT-MLX-4bit"))
+```
+
+**Do not nest** inside another `handler-bind` that handles `llm-provider-error` —
+the outer handler fires first and may re-execute the body before inner handlers
+run. Use it as the outermost recovery layer.
 
 ---
 

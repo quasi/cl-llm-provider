@@ -8,358 +8,347 @@ Handle API errors, network failures, and edge cases gracefully.
 
 ## Common Error Types
 
-cl-llm-provider provides specific error types for different failure modes:
+Every error is a condition under `llm-provider-error`. The names are prefixed —
+there is no bare `network-error` or `rate-limit-error`:
 
 ```lisp
-(use-package :cl-llm-provider)
+(in-package :cl-llm-provider)
 
 (handler-case
-  (let ((response (complete messages)))
-    ...)
+    (complete messages)
 
-  ;; Retry-able errors (temporary failures)
-  (rate-limit-error (e)
-    (format t "Rate limited. Wait and retry.~%"))
+  ;; Transient — worth retrying
+  (provider-rate-limit-error (e)
+    (format t "Rate limited, retry after ~As~%" (error-retry-after e)))
 
-  (timeout-error (e)
-    (format t "Request timed out.~%"))
+  (provider-timeout-error (e)
+    (format t "Request timed out: ~A~%" e))
 
-  (network-error (e)
-    (format t "Network error: ~A~%" e))
+  (provider-network-error (e)
+    (format t "Could not reach ~A: ~A~%" (error-url e) e))
 
-  ;; Non-retry-able errors (permanent failures)
-  (authentication-error (e)
-    (format t "Auth failed. Check your API key.~%"))
+  (provider-overloaded-error (e)
+    (format t "Provider overloaded: ~A~%" e))
 
-  (provider-error (e)
-    (format t "Provider API error: ~A~%" e))
+  ;; Permanent — retrying repeats the same failure
+  (provider-authentication-error (e)
+    (format t "Auth failed (~A). Check your API key.~%" (error-status-code e)))
 
-  ;; Catch-all
-  (error (e)
-    (format t "Unknown error: ~A~%" e)))
+  (provider-model-not-found-error (e)
+    (format t "No such model: ~A~%" (error-requested-model e)))
+
+  (provider-context-length-error (e)
+    (format t "Prompt too long: ~A~%" e))
+
+  ;; Everything else
+  (llm-provider-error (e)
+    (format t "Provider error: ~A~%" e)))
 ```
 
-**Retry-able Errors** (use backoff and retry):
-- `rate-limit-error` - Too many requests
-- `timeout-error` - Request timed out
-- `network-error` - Connection failed
+The hierarchy, so you can catch at the altitude you mean:
 
-**Non-retry-able Errors** (log and fail):
-- `authentication-error` - Invalid API key or credentials
-- `provider-error` - API returned an error
-- `provider-configuration-error` - Missing required configuration
+```
+llm-provider-error
+├── provider-configuration-error
+├── provider-api-error              ; the server answered, with an error
+│   ├── provider-rate-limit-error
+│   ├── provider-authentication-error
+│   ├── provider-model-not-found-error
+│   ├── provider-context-length-error
+│   ├── provider-content-filter-error
+│   ├── provider-overloaded-error
+│   └── provider-invalid-response-error
+├── provider-network-error          ; the server did not answer
+│   └── provider-timeout-error
+├── provider-json-parse-error
+└── llm-stream-error
+    ├── stream-interrupted-error
+    └── stream-parse-error
+```
+
+Don't classify by string matching or status code — `handle-http-error` already
+did that, which is what the typed conditions are for. If you need the predicate
+rather than the type, `(transient-error-p condition)` is the same judgement the
+library uses internally.
+
+## Restarts
+
+Every error point offers restarts. **Use `handler-bind`, never `handler-case`**:
+`handler-case` unwinds the stack before its body runs, which disestablishes every
+restart, so `invoke-restart` there signals `control-error` instead of recovering.
+
+| Restart | Established by | Argument(s) | Effect |
+|---|---|---|---|
+| `use-value` | HTTP 401 | new API key | Set the key on the provider and re-issue |
+| `wait-and-retry` | HTTP 429 | — | Sleep `retry-after`, then re-issue |
+| `retry` | HTTP 429, and every other status **except 401** | — | Re-issue the identical request |
+| `use-model` | `complete`, `embedding`, `complete-stream` | model name | Re-issue against the **same** provider with a different model |
+| `use-fallback-provider` | `complete`, `embedding`, `complete-stream` | provider, *optional* model | Re-issue against a **different** provider |
+| `skip-tool` | `execute-tool-calls`, when a tool name is not in the registry | — | Skip that call and carry on |
+| `use-error-result` | `execute-tool`, on handler failure | — | Record the error as that tool's result |
+| `retry-execution` | `execute-tool`, on handler failure | — | Run the handler again |
+
+Three things that surprise people. A 401 offers only `use-value`, not `retry` —
+the same key would fail the same way. `provider-overloaded-error` (503/529) falls
+through the generic branch, so it offers plain `retry` and **not**
+`wait-and-retry`; for backoff there use `with-auto-recovery`, whose own loop
+honours `retry-after` for overloaded conditions. And the three tool-execution
+restart names above live in `cl-llm-provider.tools` and are not exported — from
+another package, write `(find-restart 'cl-llm-provider.tools::skip-tool c)`.
+
+```lisp
+(handler-bind
+    ((provider-model-not-found-error
+       (lambda (c)
+         (let ((r (find-restart 'use-model c)))
+           (when r (invoke-restart r "gpt-4o-mini"))))))
+  (complete messages :model "gtp-4o-mini"))   ; typo, corrected in flight
+```
+
+To discover what is available at runtime rather than from this table:
+
+```lisp
+(handler-bind
+    ((llm-provider-error
+       (lambda (c)
+         (dolist (opt (available-recovery-options c))
+           (format t "~A — ~A~%" (getf opt :name) (getf opt :report))))))
+  (complete messages))
+```
+
+`use-fallback-provider` takes an optional second argument, the model to use on
+the fallback. Supply it whenever the fallback is a different service; see
+[Local models and failover](local-models-and-failover.md), which is the case it
+exists for.
 
 ## Retry with Exponential Backoff
 
-Automatically retry transient failures with increasing delays:
+`with-auto-recovery` does this. It retries transient errors only, waits
+`retry-after` when the server sent one and backs off exponentially when it did
+not:
 
 ```lisp
-(use-package :cl-llm-provider)
+(with-auto-recovery (:max-retries 3 :backoff-base 1.0
+                     :on-retry (lambda (e n) (format t "retry ~D: ~A~%" n e)))
+  (complete messages))
+```
 
-(defun complete-with-retry (messages
-                           &key
-                           (max-retries 3)
-                           (initial-delay 1)
-                           (max-delay 60))
-  "Send completion, retrying transient errors with exponential backoff."
+Write it by hand only if you need behaviour the macro does not have. The pieces
+are exported, so you are not starting from nothing:
 
-  (let ((retry-count 0)
-        (delay initial-delay))
-
-    (loop
+```lisp
+(defun complete-with-retry (messages &key (max-retries 3) (backoff-base 1.0))
+  "Send a completion, retrying transient errors with exponential backoff."
+  (let ((attempt 0))
+    (loop                              ; LOOP establishes the block RETURN needs
       (handler-case
-        ;; Try the request
-        (return (complete messages))
-
-        ;; Transient errors: retry with backoff
-        ((or rate-limit-error timeout-error network-error) (e)
-          (if (< retry-count max-retries)
-            (progn
-              (incf retry-count)
-              ;; Wait with exponential backoff
-              (format t "Error: ~A. Retrying in ~A seconds (~A/~A)~%"
-                     e delay retry-count max-retries)
-              (sleep delay)
-              ;; Exponential backoff: 1s, 2s, 4s, 8s...
-              (setf delay (min max-delay (* delay 2))))
-            ;; Give up after max retries
-            (error "Max retries exceeded: ~A" e)))
-
-        ;; Permanent errors: fail immediately
-        ((or authentication-error provider-error) (e)
-          (error "Unrecoverable error: ~A" e))))))
-
-;; Use it
-(complete-with-retry messages)
+          (return (complete messages))
+        (llm-provider-error (e)
+          (unless (and (transient-error-p e) (< attempt max-retries))
+            (error e))
+          (incf attempt)
+          (let ((wait (retry-wait-time e attempt backoff-base)))
+            (format t "~A — retrying in ~,1Fs (~D/~D)~%" e wait attempt max-retries)
+            (when (> wait 0) (sleep wait))))))))
 ```
 
 ## Rate Limit Handling
 
-Handle rate limits intelligently:
+`provider-rate-limit-error` carries the server's own `Retry-After` when it sent
+one. `wait-and-retry` uses it for you:
 
 ```lisp
-(use-package :cl-llm-provider)
-
-(defun complete-rate-limit-aware (messages
-                                 &key
-                                 (request-delay 0))
-  "Complete with automatic rate limit awareness."
-
-  (loop
-    (handler-case
-      (progn
-        (when (> request-delay 0)
-          (sleep request-delay))
-        (return (complete messages)))
-
-      ;; Respect rate limits
-      (rate-limit-error (e)
-        ;; Extract wait time from error if available
-        (let ((wait-seconds (get-rate-limit-reset-time e)))
-          (format t "Rate limited. Waiting ~A seconds...~%" wait-seconds)
-          (sleep wait-seconds))))))
-
-(defun get-rate-limit-reset-time (error-condition)
-  "Extract 'Retry-After' header from rate limit error."
-  (let ((retry-after (error-retry-after error-condition)))
-    (or retry-after 60)))  ; Default to 60s if not specified
+(handler-bind
+    ((provider-rate-limit-error
+       (lambda (c)
+         (format t "Rate limited; waiting ~As~%" (or (error-retry-after c) 60))
+         (let ((r (find-restart 'wait-and-retry c)))
+           (when r (invoke-restart r))))))
+  (complete messages))
 ```
+
+`(error-retry-after c)` returns `NIL` when the provider sent no header, which is
+why the fallback above is explicit. `retry-wait-time` applies the same default.
 
 ## Batch Processing with Error Recovery
 
-Process multiple requests with per-request error handling:
+Collect successes and failures instead of stopping at the first problem:
 
 ```lisp
-(use-package :cl-llm-provider)
-
-(defun process-batch (messages-list
-                     &key
-                     (continue-on-error t))
-  "Process multiple completion requests.
-  If continue-on-error is T, collect both successes and failures.
-  If NIL, stop on first error."
-
+(defun process-batch (messages-list &key (continue-on-error t))
+  "Complete each request. Returns (values successes failures)."
   (let ((results '())
-        (errors '()))
-
+        (failures '()))
     (dolist (msg messages-list)
       (handler-case
-        (push (complete msg) results)
-
-        ;; Handle transient errors
-        ((or rate-limit-error timeout-error network-error) (e)
+          (push (complete msg) results)
+        (llm-provider-error (e)
           (if continue-on-error
-            (push (list :error msg :condition e) errors)
-            (error e)))
+              (push (list :messages msg :condition e) failures)
+              (error e)))))
+    (values (nreverse results) (nreverse failures))))
 
-        ;; Handle permanent errors
-        ((or authentication-error provider-error) (e)
-          (if continue-on-error
-            (push (list :error msg :condition e) errors)
-            (error e)))))
-
-    (values (reverse results) (reverse errors))))
-
-;; Use it
 (multiple-value-bind (successes failures)
-    (process-batch messages)
-  (format t "Processed: ~A successful, ~A failed~%"
-         (length successes) (length failures))
-  (dolist (failure failures)
-    (format t "Failed: ~A~%" (getf failure :condition))))
+    (process-batch (list (list (list :role "user" :content "Q1"))
+                         (list (list :role "user" :content "Q2"))))
+  (format t "~D succeeded, ~D failed~%" (length successes) (length failures))
+  (dolist (f failures)
+    (format t "  ~A~%" (getf f :condition))))
 ```
 
-## Handling Specific API Errors
+## Deciding What to Do With an Error
 
-Some providers return specific error messages. Handle them appropriately:
+Dispatch on the condition type. The status code and message were already
+classified for you:
 
 ```lisp
-(use-package :cl-llm-provider)
-
-(defun handle-api-error (condition)
-  "Convert API error to appropriate action."
-  (let ((message (error-message condition))
-        (status-code (error-status-code condition)))
-
-    (cond
-      ;; Rate limiting
-      ((or (string-contains "rate" message)
-           (= status-code 429))
-       :retry-with-backoff)
-
-      ;; Invalid API key
-      ((or (string-contains "unauthorized" message)
-           (= status-code 401))
-       :check-credentials)
-
-      ;; Invalid model name
-      ((string-contains "not found" message)
-       :check-model-name)
-
-      ;; Quota exceeded
-      ((= status-code 403)
-       :check-billing)
-
-      ;; Server error
-      ((>= status-code 500)
-       :retry-transient)
-
-      ;; Default: unrecoverable
-      (t :fail))))
+(defun error-action (condition)
+  "What to do about CONDITION."
+  (typecase condition
+    (provider-rate-limit-error       :wait-and-retry)
+    (provider-overloaded-error       :wait-and-retry)
+    (provider-timeout-error          :retry-with-backoff)
+    (provider-network-error          :use-fallback-provider)
+    (provider-authentication-error   :check-credentials)
+    (provider-model-not-found-error  :use-model)
+    (provider-context-length-error   :shorten-the-prompt)
+    (provider-content-filter-error   :do-not-retry)
+    (t (if (transient-error-p condition) :retry-with-backoff :fail))))
 ```
 
 ## Graceful Degradation
 
-Fall back to alternative approaches on error:
+Try one provider, fall back to another. Use the restart — it re-issues the
+failing request in place, so nothing before it in your code runs twice:
 
 ```lisp
-(use-package :cl-llm-provider)
+(defparameter *fallbacks*
+  (list (cons (make-provider :openai :model "gpt-4o") "gpt-4o")
+        (cons (make-provider :ollama :model "mistral") "mistral")))
 
 (defun complete-with-fallback (messages)
-  "Try primary provider, fall back to secondary on error."
-
-  ;; Try primary provider
-  (handler-case
-    (return (complete messages
-                     :provider (make-provider :anthropic
-                                            :model "claude-3-sonnet-20240229")))
-    (error (e)
-      (format t "Primary provider failed: ~A~%" e)))
-
-  ;; Fall back to secondary provider
-  (handler-case
-    (return (complete messages
-                     :provider (make-provider :openai
-                                            :model "gpt-4")))
-    (error (e)
-      (format t "Secondary provider failed: ~A~%" e)))
-
-  ;; Fall back to tertiary provider
-  (handler-case
-    (return (complete messages
-                     :provider (make-provider :ollama
-                                            :model "mistral")))
-    (error (e)
-      (format t "Tertiary provider failed: ~A~%" e)
-      ;; If all fail, return cached response or error
-      (error "All providers failed"))))
+  "Try the default provider, then each fallback, on network failure."
+  (let ((remaining *fallbacks*))
+    (handler-bind
+        ((provider-network-error
+           (lambda (c)
+             (let ((next (pop remaining))
+                   (r (find-restart 'use-fallback-provider c)))
+               (when (and next r)
+                 (format *error-output* "~&falling back to ~A~%"
+                         (provider-name (car next)))
+                 (invoke-restart r (car next) (cdr next)))))))
+      (complete messages))))
 ```
+
+`with-auto-recovery` expresses the same thing declaratively, with retries first:
+
+```lisp
+(with-auto-recovery (:max-retries 2 :fallback-providers *fallbacks*)
+  (complete messages))
+```
+
+**Name the model in each entry** whenever the fallback is a different service. A
+bare provider entry keeps the caller's model, which is right only when both
+endpoints serve the same one.
 
 ## Circuit Breaker Pattern
 
-Stop attempting requests to a failing provider temporarily:
+Stop attempting requests to a provider that keeps failing:
 
 ```lisp
-(use-package :cl-llm-provider)
-
 (defclass circuit-breaker ()
-  ((failures :initform 0 :accessor breaker-failures)
-   (threshold :initarg :threshold :initform 5)
-   (reset-time :initarg :reset-time :initform 300)  ; 5 minutes
+  ((failures    :initform 0   :accessor breaker-failures)
+   (threshold   :initarg :threshold  :initform 5   :reader breaker-threshold)
+   (reset-time  :initarg :reset-time :initform 300 :reader breaker-reset-time)
    (last-failure :initform nil :accessor breaker-last-failure)
-   (state :initform :closed :accessor breaker-state)))
+   (state       :initform :closed :accessor breaker-state)))
 
-(defmethod breaker-open-p ((breaker circuit-breaker))
-  "Check if circuit breaker is open."
+(defun breaker-open-p (breaker)
+  "Open means blocking — the circuit has tripped."
   (eq (breaker-state breaker) :open))
 
-(defmethod record-failure ((breaker circuit-breaker))
-  "Record a failure."
+(defun record-failure (breaker)
   (incf (breaker-failures breaker))
   (setf (breaker-last-failure breaker) (get-universal-time))
-  (when (>= (breaker-failures breaker) (slot-value breaker 'threshold))
+  (when (>= (breaker-failures breaker) (breaker-threshold breaker))
     (setf (breaker-state breaker) :open)))
 
-(defmethod reset-breaker ((breaker circuit-breaker))
-  "Reset circuit breaker after cooldown."
-  (when (breaker-open-p breaker)
-    (let ((now (get-universal-time))
-          (last (breaker-last-failure breaker)))
-      (when (> (- now last) (slot-value breaker 'reset-time))
-        (setf (breaker-failures breaker) 0)
-        (setf (breaker-state breaker) :closed)))))
+(defun maybe-reset (breaker)
+  "Re-close the circuit once the cooldown has passed."
+  (when (and (breaker-open-p breaker)
+             (> (- (get-universal-time) (breaker-last-failure breaker))
+                (breaker-reset-time breaker)))
+    (setf (breaker-failures breaker) 0
+          (breaker-state breaker) :closed)))
 
 (defun complete-with-breaker (messages breaker)
-  "Complete with circuit breaker protection."
-  (reset-breaker breaker)
-  (if (breaker-open-p breaker)
-    (error "Provider is down. Circuit open.")
-    (handler-case
-      (return (complete messages))
-      ((or rate-limit-error timeout-error network-error) (e)
-        (record-failure breaker)
-        (error e)))))
+  "Complete unless the circuit is open; count transient failures against it."
+  (maybe-reset breaker)
+  (when (breaker-open-p breaker)
+    (error "Circuit open — provider has failed ~D times"
+           (breaker-failures breaker)))
+  (handler-bind
+      ((llm-provider-error
+         (lambda (e) (when (transient-error-p e) (record-failure breaker)))))
+    (complete messages)))
 ```
+
+The handler is `handler-bind` and does not transfer control, so the condition
+carries on to whatever established a restart or an outer handler. A
+`handler-case` here would swallow it.
 
 ## Logging and Monitoring
 
-Log errors for debugging and monitoring:
+`handler-bind` is right for logging specifically because it does *not* unwind —
+you observe the error and let it continue to whoever can act on it:
 
 ```lisp
-(use-package :cl-llm-provider)
+(defvar *recent-errors* '())
 
-(defvar *error-log* (make-array 100 :initial-element nil))
-(defvar *error-count* 0)
-
-(defun log-error (condition messages)
-  "Log an error for monitoring."
-  (let ((entry (list
-         :timestamp (get-universal-time)
-         :error (type-of condition)
-         :message (error-message condition)
-         :messages-count (length messages)
-         :condition condition)))
-    ;; Store in log
-    (setf (aref *error-log* (mod *error-count* 100)) entry)
-    (incf *error-count*)
-    ;; Print to stderr
-    (format *error-output* "[ERROR] ~A: ~A~%"
-           (error-message condition)
-           (type-of condition))))
+(defun log-provider-error (condition)
+  (push (list :timestamp (get-universal-time)
+              :type      (type-of condition)
+              :message   (error-message condition))
+        *recent-errors*)
+  (format *error-output* "[ERROR] ~A: ~A~%"
+          (type-of condition) (error-message condition)))
 
 (defun complete-with-logging (messages)
-  "Complete with error logging."
-  (handler-case
-    (complete messages)
-    (error (e)
-      (log-error e messages)
-      (error e))))
-
-;; View error logs
-(defun show-recent-errors (&optional (n 10))
-  "Show last N errors."
-  (loop
-    for i from (max 0 (- *error-count* n)) below *error-count*
-    for entry = (aref *error-log* (mod i 100))
-    when entry
-    do (format t "~A: ~A~%"
-              (getf entry :timestamp)
-              (getf entry :message))))
+  (handler-bind ((llm-provider-error #'log-provider-error))
+    (complete messages)))
 ```
+
+For request/response logging rather than error logging, use the hooks in
+[Observability](observability.md) instead — they see successful calls too.
 
 ## Production Best Practices
 
-**In production, always**:
-
-1. **Catch all errors**, not just expected ones
-2. **Log errors** with context (request, user, timestamp)
-3. **Use exponential backoff** for transient failures
-4. **Implement circuit breakers** to prevent cascading failures
-5. **Monitor error rates** to detect issues early
-6. **Alert on critical errors** (auth failures, provider down)
+1. **Handle at the right altitude.** `llm-provider-error` for logging;
+   the specific types where the action differs.
+2. **`handler-bind`, not `handler-case`**, wherever a restart might be invoked.
+3. **Let `with-auto-recovery` do backoff** rather than hand-rolling it.
+4. **Fail over on `provider-network-error`, not on every API error.** The
+   fallback will not answer your 400 any better, and it will charge you to say so
+   twice.
+5. **Name the model when failing over across services.**
+6. **Monitor error rates**, and alert on authentication failures — they do not
+   resolve themselves.
 
 ```lisp
-(defun complete-production (messages &key context)
-  "Production-ready completion with all protections."
-  (with-error-logging context
-    (with-circuit-breaker (get-provider-breaker)
-      (complete-with-retry
-        messages
-        :max-retries 3))))
+(defparameter *breaker* (make-instance 'circuit-breaker :threshold 5))
+
+(defun complete-production (messages &key (breaker *breaker*))
+  "Retries, failover, circuit breaking and logging, composed."
+  (handler-bind ((llm-provider-error #'log-provider-error))
+    (with-auto-recovery (:max-retries 3 :fallback-providers *fallbacks*)
+      (complete-with-breaker messages breaker))))
 ```
 
 ---
 
 **See Also**:
+- [Local models and failover](local-models-and-failover.md) — the failover pattern end to end
+- [Observability](observability.md) — hooks, metrics, request logging
 - [Tutorial: Basic Completions](../tutorials/01-basics.md)
 - [Tutorial: Advanced Features](../tutorials/03-advanced.md)

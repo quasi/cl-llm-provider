@@ -111,6 +111,17 @@ report alone:
 Model not found: gemma-4-26b
 ```
 
+Corrections stick. If a handler fixes the name with `use-model` and the endpoint
+then dies, a later one-argument `use-fallback-provider` carries the *corrected*
+name to the fallback, not the one you started with.
+
+### Not `with-auto-recovery`, for this
+
+`with-auto-recovery`'s `:fallback-providers` swaps `*default-provider*` and re-runs
+the body. If the body names a model — and for a local endpoint it must — that
+model goes to the fallback and there is no way to change it. It is the right tool
+for retrying one service and the wrong one for crossing between two.
+
 ## Choosing what to fail over on
 
 `provider-network-error` means *the server is not there* — connection refused,
@@ -144,5 +155,7 @@ discovering the difference in your output quality.
 
 ## See also
 
-- [Error handling](error-handling.md) — the full condition hierarchy and every restart
+- [Error handling](error-handling.md) — the full condition hierarchy and how to
+  handle each class (it does not cover restarts; the ones above are the whole set
+  that matter for failover)
 - [Adding a provider](add-provider.md) — when OpenAI-shaped is not shaped enough

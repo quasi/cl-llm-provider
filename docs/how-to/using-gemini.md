@@ -312,23 +312,30 @@ Handle authentication and rate limits gracefully:
 **Invalid API key:**
 
 ```lisp
-(handler-case
-    (let ((provider (make-provider :gemini :api-key "invalid")))
-      (complete '((:role "user" :content "Hello")) :provider provider))
-  (provider-authentication-error (e)
-    (format t "Auth failed: ~A~%" e)
-    ;; Provide correct key via restart
-    (invoke-restart 'use-value (uiop:getenv "GEMINI_API_KEY"))))
+;; handler-BIND, not handler-CASE. handler-case unwinds the stack before its
+;; body runs, which disestablishes every restart the signalling code set up —
+;; `invoke-restart` there signals control-error instead of recovering.
+(handler-bind
+    ((provider-authentication-error
+       (lambda (e)
+         (format t "Auth failed: ~A~%" e)
+         ;; Provide correct key via restart
+         (let ((r (find-restart 'use-value e)))
+           (when r (invoke-restart r (uiop:getenv "GEMINI_API_KEY")))))))
+  (let ((provider (make-provider :gemini :api-key "invalid")))
+    (complete '((:role "user" :content "Hello")) :provider provider)))
 ```
 
 **Rate limits:**
 
 ```lisp
-(handler-case
-    (complete messages :provider provider)
-  (provider-rate-limit-error (e)
-    (format t "Rate limited. Waiting and retrying...~%")
-    (invoke-restart 'wait-and-retry)))
+(handler-bind
+    ((provider-rate-limit-error
+       (lambda (e)
+         (format t "Rate limited. Waiting and retrying...~%")
+         (let ((r (find-restart 'wait-and-retry e)))
+           (when r (invoke-restart r))))))
+  (complete messages :provider provider))
 ```
 
 **Available restarts:**

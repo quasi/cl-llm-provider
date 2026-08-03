@@ -189,8 +189,13 @@ Example:
                             (invoke-hooks all-hooks :on-error prov mod e))
                           (when on-error
                             (funcall on-error e)))))
+              ;; INSIDE the loop, so a model changed by USE-MODEL or by
+              ;; USE-FALLBACK-PROVIDER is the one the next failure reports. Bound
+              ;; outside, a corrected second attempt would fail naming the FIRST
+              ;; attempt's model — a lie that reads exactly like the truth.
               ;; Send request and parse response (with performance tracking if enabled)
-              (let ((response
+              (let* ((*requested-model* mod)
+                     (response
                       (if *performance-profiling*
                           (let ((*performance-stats* (make-performance-stats)))
                             (let* ((raw-response (send-completion-request prov messages
@@ -227,15 +232,49 @@ Example:
                   (funcall on-response response timing))
 
                 response)))
-        (use-fallback-provider (fallback)
+        (use-fallback-provider (fallback &optional (fallback-model nil fallback-model-p))
           :report "Re-issue the request with a different provider"
           :interactive (lambda ()
                          (format *query-io* "Enter fallback provider keyword: ")
                          (finish-output *query-io*)
                          (let ((*read-eval* nil))
                            (list (read *query-io*))))
+          ;; FALLBACK-MODEL IS WHAT MAKES A CROSS-PROVIDER FAILOVER POSSIBLE AT
+          ;; ALL. Without it this restart switches the provider and KEEPS THE
+          ;; MODEL, because %RESOLVE-MODEL is (or model ...) and an explicit model
+          ;; always wins — so a local model name travels to a cloud endpoint that
+          ;; has never heard of it. Measured 2026-08-04 against a live MLX server:
+          ;; the switch succeeded and the request then died on the fallback's own
+          ;; model-not-found. Every real local->cloud failover is that case;
+          ;; "gemma-4-26B-A4B-it-QAT-MLX-4bit" means nothing to anyone else.
+          ;;
+          ;; THE ONE-ARGUMENT FORM IS UNCHANGED, deliberately. Preferring the new
+          ;; provider's own default would be the more "helpful" default and would
+          ;; silently break every caller failing over between two endpoints that
+          ;; serve the SAME model — a behaviour change no existing test could have
+          ;; caught, because the fixture used one model string in three places. A
+          ;; caller who wants the model to change now says which.
           (setf prov (%coerce-provider fallback)
-                mod (%resolve-model model prov)))))))
+                mod (if fallback-model-p
+                        fallback-model
+                        (%resolve-model model prov))))
+        (use-model (new-model)
+          :report "Re-issue the request with a different model"
+          :interactive (lambda ()
+                         (format *query-io* "Enter model name: ")
+                         (finish-output *query-io*)
+                         (list (read-line *query-io*)))
+          ;; ESTABLISHED HERE AND NOT IN HANDLE-HTTP-ERROR, where the 404 is
+          ;; actually signalled, because there is nothing to change down there:
+          ;; HANDLE-HTTP-ERROR returns :RETRY and the provider method re-issues
+          ;; with its OWN lexical model, which no restart body can reach. MOD is
+          ;; the variable the next attempt reads, and it lives here.
+          ;;
+          ;; R-CS-002 in substance rather than in form: the 404 already carried
+          ;; RETRY (which repeats the same 404) and USE-FALLBACK-PROVIDER (a
+          ;; sledgehammer for a typo) and nothing that could fix the one thing
+          ;; actually wrong.
+          (setf mod new-model))))))
 
 (defun/i embedding (input &key provider model dimensions)
   "Generate vector embeddings for text.

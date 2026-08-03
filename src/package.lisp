@@ -263,6 +263,9 @@
    #:translate-tool-to-provider
    #:translate-message-to-provider
    #:provider-http-post
+   ;; The in-flight model, bound beside the condition rather than wrapped around
+   ;; it, so a model-not-found can name what it could not find.
+   #:*requested-model*
    #:parse-tool-calls
 
    ;; Provider introspection

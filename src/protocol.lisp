@@ -521,16 +521,43 @@ formats. The default method handles common patterns across all providers."))
   :purpose "Classify HTTP errors into specific condition types for agent recovery"
   :role "Extensible dispatch point for provider-specific error classification")
 
-(defun/i handle-http-error (status-code body provider)
+(defvar *requested-model* nil
+  "The model the in-flight request is asking for, or NIL outside one.
+
+BOUND BESIDE THE CONDITION, NEVER WRAPPED AROUND IT. This is how context reaches
+a condition without changing a signature or re-signalling — the same pattern, and
+for the same reason, as ghost's *supervision-office-name*: re-signalling to attach
+context destroys the inner condition's restarts, and widening every provider
+method's lambda list to carry one diagnostic string would touch nine call sites
+across five files to say something COMPLETE already knows.
+
+BOUND INSIDE THE RETRY LOOP, so a model corrected by USE-MODEL is the one a second
+failure names. Bound outside it, the second failure would report the first
+attempt's model and read exactly like the truth.")
+
+(defun/i handle-http-error (status-code body provider &key requested-model)
   "Signal appropriate condition for HTTP error.
 
 STATUS-CODE - HTTP status code (integer)
 BODY - Response body (string or hash-table)
 PROVIDER - Provider instance
+REQUESTED-MODEL - The model this request asked for, when the caller knows it
 
 Contract: if a handler invokes any restart established here, HANDLE-HTTP-ERROR
 returns :RETRY and the caller re-issues the request. If no handler intervenes,
-the condition propagates and this never returns."
+the condition propagates and this never returns.
+
+WHY REQUESTED-MODEL IS A PARAMETER AND NOT DUG OUT OF THE BODY. It is dug out of
+the body first — CLASSIFY-API-ERROR reads a nested (error.model) field — and
+almost no server sends it. Measured 2026-08-04 against a live MLX server: a 404
+for a model that did not exist reported \"Model not found: NIL\". The caller has
+always known which model it asked for; it simply was not passed. An operator
+being told that something was not found, and not what, is the least useful true
+sentence available — and it cost one wrong diagnosis in the session that fixed it.
+
+The body still WINS when it names a model. The server is the authority on what it
+refused; a caller-supplied value overwriting that would replace a fact with an
+assumption."
   (:feature http-transport)
   (:purpose "Classify HTTP errors and signal typed conditions with restarts")
   (let ((error-message (extract-error-message body)))
@@ -571,6 +598,18 @@ the condition propagates and this never returns."
       (otherwise
        (multiple-value-bind (condition-type extra-initargs)
            (classify-api-error provider status-code body error-message)
+         ;; Fill in the model the caller asked for ONLY where the classifier could
+         ;; not find one in the body. Body first, caller second — see the note in
+         ;; this function's :purpose. CLASSIFY-API-ERROR's own signature is
+         ;; untouched on purpose: it is a public generic that callers specialize,
+         ;; and a widened lambda list would break every specialization out there
+         ;; to save one LIST* here.
+         (let ((known-model (or requested-model *requested-model*)))
+           (when (and known-model
+                      (eq condition-type 'provider-model-not-found-error)
+                      (null (getf extra-initargs :requested-model)))
+             (setf extra-initargs
+                   (list* :requested-model known-model extra-initargs))))
          (restart-case
              (apply #'error condition-type
                     :provider provider

@@ -930,3 +930,210 @@
     (let ((intent (telos:get-intent sym)))
       (fiveam:is (not (null intent))
                  (format nil "~A should have telos intent" sym)))))
+
+;;;; ============================================================
+;;;; Section 5: Cross-provider failover — the model has to travel too
+;;;;
+;;;; WRITTEN BEFORE THE FIX (2026-08-04). Measured first, in the image, against
+;;;; a live local endpoint and a dead one:
+;;;;
+;;;;   handler ran            T
+;;;;   use-fallback-provider  found
+;;;;   restart invoked        -> "Model not found: NIL"
+;;;;
+;;;; USE-FALLBACK-PROVIDER SWITCHES THE PROVIDER AND KEEPS THE MODEL. Its body
+;;;; re-resolves (%resolve-model model prov) where MODEL is the caller's ORIGINAL
+;;;; argument, and %resolve-model is (or model ...) — so an explicit model always
+;;;; wins and travels to a provider that has never heard of it. Every real
+;;;; local->cloud failover is exactly that case: "gemma-4-26B-A4B-it-QAT-MLX-4bit"
+;;;; means nothing to OpenRouter.
+;;;;
+;;;; WHY THE EXISTING TEST DID NOT CATCH IT. use-fallback-provider-reissues-request
+;;;; builds both providers with :model "m" and passes :model "m". One value in
+;;;; three places cannot show that the value travelled — the same blind spot as a
+;;;; tier table tested with one tier. The fixtures below use DIFFERENT model names
+;;;; per provider and RECORD what each was handed, which is the only way the
+;;;; question can be asked at all.
+;;;; ============================================================
+
+(defclass model-recording-provider (openai-provider) ())
+
+(defvar *models-seen* nil
+  "Every model string a recording provider was handed, newest first.")
+
+(defmethod send-completion-request ((p model-recording-provider) messages
+                                    &key model &allow-other-keys)
+  (declare (ignore messages))
+  (push (list (provider-default-model p) model) *models-seen*)
+  ;; A provider that refuses anything but its OWN model, the way a real endpoint
+  ;; does. Returning success regardless would let a test assert on *models-seen*
+  ;; and still not prove the request could have been served.
+  (unless (equal model (provider-default-model p))
+    (error 'provider-model-not-found-error
+           :provider p
+           :requested-model model
+           :status-code 404
+           :message "Model not found"))
+  (yason:parse "{\"id\":\"r1\",\"model\":\"m\",\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}"))
+
+(defclass unreachable-test-provider (openai-provider) ())
+
+(defmethod send-completion-request ((p unreachable-test-provider) messages
+                                    &key &allow-other-keys)
+  (declare (ignore messages))
+  (error 'provider-network-error :provider p :url "http://nowhere/v1"
+                                 :operation :completion))
+
+(fiveam:test use-fallback-provider-can-carry-the-fallbacks-own-model
+  "THE CROSS-PROVIDER FAILOVER. Switching provider must be able to switch model.
+
+DISCRIMINATING: the two providers answer to DIFFERENT model names and the
+fallback REFUSES anything but its own, so a restart that carries the original
+model over cannot pass by accident — it fails with the very
+provider-model-not-found-error this test exists to prevent. Asserting only that
+a response came back would pass against a fixture that ignored :model, which is
+why the fallback checks."
+  (setf *models-seen* nil)
+  (let ((local (make-instance 'unreachable-test-provider :model "local-only-model"))
+        (cloud (make-instance 'model-recording-provider  :model "cloud-only-model")))
+    (let ((response
+            (handler-bind
+                ((provider-network-error
+                   (lambda (c)
+                     (let ((r (find-restart 'cl-llm-provider:use-fallback-provider c)))
+                       (when r (invoke-restart r cloud "cloud-only-model"))))))
+              (complete '((:role "user" :content "hi"))
+                        :provider local
+                        ;; the shape ghost's own call site uses: an EXPLICIT model,
+                        ;; named for the provider we were hoping to reach
+                        :model "local-only-model"))))
+      (fiveam:is (string= "ok" (response-content response))
+                 "the fallback served the request")
+      (fiveam:is (equal '("cloud-only-model" "cloud-only-model") (first *models-seen*))
+                 "and it was asked for ITS OWN model, not the dead endpoint's"))))
+
+(defclass permissive-recording-provider (openai-provider) ())
+
+(defmethod send-completion-request ((p permissive-recording-provider) messages
+                                    &key model &allow-other-keys)
+  (declare (ignore messages))
+  (push (list (provider-default-model p) model) *models-seen*)
+  (yason:parse "{\"id\":\"r1\",\"model\":\"m\",\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}"))
+
+(fiveam:test use-fallback-provider-without-a-model-is-unchanged
+  "THE CONTROL, and without it the test above is a licence to change semantics.
+
+A one-argument use-fallback-provider must behave exactly as it did before: keep
+the caller's model and re-resolve it against the new provider. Callers switching
+between two endpoints serving the SAME model depend on that, and a fix that
+quietly flipped the precedence to prefer the new provider's own default would
+break them with no test failing anywhere.
+
+THE TWO NAMES MUST DIFFER, and the first draft of this control got that wrong: it
+gave the caller and the fallback provider the SAME model string, so 'kept the
+caller's model' and 'used the fallback's default' were the same green — the exact
+blind spot that let use-fallback-provider-reissues-request pass for years over a
+restart that cannot cross a model boundary. Here the fallback's own default is
+deliberately a different string, and the assertion is that it was NOT used.
+
+The fixture is permissive rather than refusing: a refusing one would fail the
+request instead of recording what it was handed, and the recording IS the
+measurement."
+  (setf *models-seen* nil)
+  (let ((local (make-instance 'unreachable-test-provider :model "the-callers-model"))
+        (mirror (make-instance 'permissive-recording-provider
+                               :model "the-fallbacks-own-default")))
+    (let ((response
+            (handler-bind
+                ((provider-network-error
+                   (lambda (c)
+                     (let ((r (find-restart 'cl-llm-provider:use-fallback-provider c)))
+                       (when r (invoke-restart r mirror))))))
+              (complete '((:role "user" :content "hi"))
+                        :provider local :model "the-callers-model"))))
+      (fiveam:is (string= "ok" (response-content response)))
+      (fiveam:is (equal "the-callers-model" (second (first *models-seen*)))
+                 "the caller's model survived a no-model fallback, as it always has")
+      (fiveam:is (not (equal "the-fallbacks-own-default" (second (first *models-seen*))))
+                 "and the fallback's own default did NOT quietly displace it"))))
+
+(fiveam:test use-model-re-issues-against-the-same-provider
+  "'That model is not here, try this one' is a choice, so it is a restart.
+
+R-CS-002: provider-model-not-found-error offered retry and use-fallback-provider
+and nothing that could actually fix a model name — the one thing wrong. Switching
+provider to solve a model typo is a sledgehammer, and retrying unchanged repeats
+the same 404.
+
+DISCRIMINATING: asserts the SECOND attempt carried the corrected name. A test that
+only asserted a response came back would pass for an implementation that ignored
+the argument and got lucky on a permissive fixture."
+  (setf *models-seen* nil)
+  (let ((p (make-instance 'model-recording-provider :model "the-real-model")))
+    (let ((response
+            (handler-bind
+                ((provider-model-not-found-error
+                   (lambda (c)
+                     (let ((r (find-restart 'cl-llm-provider:use-model c)))
+                       (when r (invoke-restart r "the-real-model"))))))
+              (complete '((:role "user" :content "hi"))
+                        :provider p :model "a-model-with-a-typo"))))
+      (fiveam:is (string= "ok" (response-content response)))
+      (fiveam:is (= 2 (length *models-seen*))
+                 "two attempts — the typo, then the correction")
+      (fiveam:is (equal "a-model-with-a-typo" (second (second *models-seen*)))
+                 "the first attempt carried the typo")
+      (fiveam:is (equal "the-real-model" (second (first *models-seen*)))
+                 "and the second carried what the handler supplied"))))
+
+(fiveam:test a-model-not-found-error-names-the-model-it-could-not-find
+  "Measured 2026-08-04 against a live MLX server: 'Model not found: NIL'.
+
+classify-api-error reads :requested-model out of a nested (error.model) field
+almost no server sends, and handle-http-error is never told which model the
+caller asked for — so the report names nothing. An operator is told that
+something was not found and not what, which is the least useful true sentence
+available, and it cost this session one wrong diagnosis before the fix.
+
+DISCRIMINATING: asserts the model NAME appears in the printed report, not merely
+that the slot is set. The report is what an operator reads off a spool file."
+  (let ((caught nil))
+    (handler-case
+        (handle-http-error 404
+                           (let ((h (make-hash-table :test #'equal)))
+                             (setf (gethash "error" h) "model not found")
+                             h)
+                           (make-instance 'openai-provider :model "d" :api-key "k")
+                           :requested-model "gemma-4-26B-A4B-it-QAT-MLX-4bit")
+      (provider-model-not-found-error (c) (setf caught c)))
+    (fiveam:is (not (null caught)) "the 404 classified as model-not-found")
+    (when caught
+      (fiveam:is (equal "gemma-4-26B-A4B-it-QAT-MLX-4bit"
+                        (error-requested-model caught))
+                 "the requested model reached the condition")
+      (fiveam:is (search "gemma-4-26B-A4B-it-QAT-MLX-4bit" (princ-to-string caught))
+                 "and it is in the SENTENCE, which is what an operator reads"))))
+
+(fiveam:test the-bodys-own-model-name-outranks-the-callers
+  "THE CONTROL for the fix above. When the server DOES name the model it refused,
+that name wins — it is the authority on what it rejected, and a caller-supplied
+value overwriting it would replace a fact with an assumption.
+
+Without this, 'fill in the model' and 'always use the caller's model' are the
+same green."
+  (let ((caught nil))
+    (handler-case
+        (handle-http-error 404
+                           (let ((h (make-hash-table :test #'equal))
+                                 (e (make-hash-table :test #'equal)))
+                             (setf (gethash "message" e) "model not found"
+                                   (gethash "model" e) "what-the-server-says"
+                                   (gethash "error" h) e)
+                             h)
+                           (make-instance 'openai-provider :model "d" :api-key "k")
+                           :requested-model "what-the-caller-says")
+      (provider-model-not-found-error (c) (setf caught c)))
+    (fiveam:is (not (null caught)))
+    (when caught
+      (fiveam:is (equal "what-the-server-says" (error-requested-model caught))
+                 "the server's own name for what it refused was not overwritten"))))

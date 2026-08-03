@@ -40,6 +40,7 @@ Complete index of all cl-llm-provider documentation.
 | [Tools: Advanced Features](how-to/tools.md) | Safety levels, validators, categories, approvals |
 | [Add a New Provider](how-to/add-provider.md) | Implement support for a new LLM provider |
 | [Error Handling](how-to/error-handling.md) | Rate limits, retries, circuit breakers, graceful degradation |
+| [Local Models and Failover](how-to/local-models-and-failover.md) | Local OpenAI-compatible endpoints, failing over to a hosted provider |
 | [Streaming](how-to/streaming.md) | Real-time streaming responses, callbacks, state management |
 | [Observability](how-to/observability.md) | Logging, metrics, request/response hooks |
 | [Testing](how-to/testing.md) | Unit tests, integration tests, mocking, performance tests |
@@ -203,7 +204,9 @@ docs/
 │   ├── using-gemini.md         # Google Gemini provider guide
 │   ├── tools.md                # Advanced tool features
 │   ├── add-provider.md         # Implement new provider
+│   ├── configuration.md        # Providers, defaults, environment
 │   ├── error-handling.md       # Error patterns
+│   ├── local-models-and-failover.md  # Local endpoints and failover
 │   ├── streaming.md            # Streaming responses
 │   ├── observability.md        # Logging and metrics
 │   └── testing.md              # Testing guide

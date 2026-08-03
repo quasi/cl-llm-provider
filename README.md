@@ -117,6 +117,7 @@ Lisp is a functional programming language known for...
 | **Understand the design** | [Explanation](docs/explanation/architecture.md) - Conceptual |
 | **Look up an API** | [Reference](docs/reference/api.md) - Complete API |
 | **Upgrade from old code** | [Migration Guide](docs/reference/migration.md) |
+| **See what changed** | [Changelog](CHANGELOG.md) |
 
 ### 📖 Learning Paths
 
@@ -150,7 +151,12 @@ docs/
 ├── how-to/                    # Task-oriented guides
 │   ├── tools.md              # Advanced tool features
 │   ├── add-provider.md       # Implement a new provider
+│   ├── configuration.md      # Providers, defaults, environment
 │   ├── error-handling.md     # Error patterns and retry logic
+│   ├── local-models-and-failover.md  # Local endpoints, failing over to the cloud
+│   ├── observability.md      # Logging, metrics, hooks
+│   ├── streaming.md          # Streaming responses and callbacks
+│   ├── using-gemini.md       # Google Gemini setup and patterns
 │   └── testing.md            # Testing tools and providers
 ├── explanation/               # Conceptual understanding
 │   ├── architecture.md       # How the system works

@@ -21,8 +21,8 @@
                :uiop)
   :components ((:module "src"
                 :components
-                ((:file "telos-shim")
-                 (:file "package" :depends-on ("telos-shim"))
+                ((:file "intent")
+                 (:file "package" :depends-on ("intent"))
                  (:file "features" :depends-on ("package"))
                  (:file "conditions" :depends-on ("package" "features"))
                  (:file "types" :depends-on ("package"))
@@ -57,6 +57,47 @@
                  (:file "api" :depends-on ("package" "types" "conditions" "protocol" "config" "tools" "providers"))
                  (:file "recovery" :depends-on ("package" "features" "conditions" "config")))))
   :in-order-to ((test-op (test-op "cl-llm-provider/test"))))
+
+;;; Optional telos integration.
+;;;
+;;; cl-llm-provider proper records its annotations in its own package and never
+;;; touches telos, so its fasls are valid in any image regardless of load order.
+;;; Load THIS system to additionally publish those annotations into a real telos.
+;;; The dependency is declared, so ASDF can invalidate on it — unlike the old
+;;; telos-shim, which guessed at telos's presence from ambient state and produced
+;;; fasls that only loaded in an image matching the one that built them.
+;;; Load-order regression test.
+;;;
+;;; Deliberately NOT chained into cl-llm-provider/test's test-op: it spawns five
+;;; cold SBCL builds and would turn a seconds-long feedback loop into a
+;;; minutes-long one. Run it before releasing, or after touching src/intent.lisp
+;;; or anything about how telos is reached:
+;;;
+;;;     (asdf:test-system "cl-llm-provider/load-order")   ; or tests/test-load-order.sh
+(asdf:defsystem "cl-llm-provider/load-order"
+  :author "quasi / quasiLabs"
+  :license "MIT"
+  :description "Fresh-image regression test for telos load-order independence"
+  :perform (test-op (o c)
+             (declare (ignore o c))
+             (let* ((script (uiop:subpathname
+                             (asdf:system-source-directory "cl-llm-provider")
+                             "tests/test-load-order.sh"))
+                    (exit (uiop:run-program (list "/bin/zsh" (namestring script))
+                                            :output t :error-output t
+                                            :ignore-error-status t)))
+               (unless (zerop exit)
+                 (error "Load-order regression test failed (exit ~a). ~
+                         cl-llm-provider's fasls must load regardless of whether ~
+                         telos was loaded first — see src/intent.lisp." exit)))))
+
+(asdf:defsystem "cl-llm-provider/telos"
+  :author "quasi / quasiLabs"
+  :license "MIT"
+  :description "Publishes cl-llm-provider's intent annotations into telos"
+  :depends-on ("cl-llm-provider" "telos")
+  :components ((:module "src"
+                :components ((:file "telos-bridge")))))
 
 (asdf:defsystem "cl-llm-provider/test"
   :author "quasi / quasiLabs"

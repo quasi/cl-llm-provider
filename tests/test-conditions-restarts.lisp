@@ -893,7 +893,7 @@
 (fiveam:test telos-features-exist
   "All planned telos features are defined"
   (let ((features (mapcar (lambda (f) (string-downcase (symbol-name f)))
-                          (telos:list-features))))
+                          (cl-llm-provider.intent:list-features))))
     (dolist (name '("llm-provider" "provider-protocol" "http-transport"
                     "completion-api" "streaming-api" "tool-calling"
                     "configuration" "observability" "error-recovery"))
@@ -906,11 +906,11 @@
       (find-symbol "TOOL-CALLING" :cl-llm-provider.tools)
     (fiveam:is (eq status :inherited))
     (fiveam:is (eq tools-symbol 'cl-llm-provider:tool-calling))
-    (fiveam:is (member tools-symbol (telos:list-features) :test #'eq))))
+    (fiveam:is (member tools-symbol (cl-llm-provider.intent:list-features) :test #'eq))))
 
 (fiveam:test telos-intent-on-complete
   "complete function has telos intent"
-  (let ((intent (telos:get-intent 'cl-llm-provider:complete)))
+  (let ((intent (cl-llm-provider.intent:get-intent 'cl-llm-provider:complete)))
     (fiveam:is (not (null intent)))))
 
 (fiveam:test telos-intent-on-conditions
@@ -918,7 +918,7 @@
   (dolist (sym '(cl-llm-provider:provider-rate-limit-error
                  cl-llm-provider:provider-network-error
                  cl-llm-provider:stream-interrupted-error))
-    (let ((intent (telos:get-intent sym)))
+    (let ((intent (cl-llm-provider.intent:get-intent sym)))
       (fiveam:is (not (null intent))
                  (format nil "~A should have telos intent" sym)))))
 
@@ -927,7 +927,7 @@
   (dolist (sym '(cl-llm-provider:available-recovery-options
                  cl-llm-provider:transient-error-p
                  cl-llm-provider:with-auto-recovery))
-    (let ((intent (telos:get-intent sym)))
+    (let ((intent (cl-llm-provider.intent:get-intent sym)))
       (fiveam:is (not (null intent))
                  (format nil "~A should have telos intent" sym)))))
 

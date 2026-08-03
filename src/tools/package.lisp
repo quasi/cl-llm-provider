@@ -3,7 +3,7 @@
 
 (defpackage :cl-llm-provider.tools
   (:use :cl :cl-llm-provider)
-  (:import-from :telos
+  (:import-from :cl-llm-provider.intent
                 #:defun/i
                 #:defintent)
   (:import-from :alexandria

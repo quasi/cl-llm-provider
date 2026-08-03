@@ -91,6 +91,21 @@
                          cl-llm-provider's fasls must load regardless of whether ~
                          telos was loaded first — see src/intent.lisp." exit)))))
 
+;;; Everything, in one command.
+;;;
+;;; The fast suite and the load-order test have opposite economics — seconds in
+;;; one image versus minutes across nine — so they are separate systems. This
+;;; chains both, so "run all the tests" is one discoverable thing rather than a
+;;; instruction someone has to remember:
+;;;
+;;;     (asdf:test-system "cl-llm-provider/test-all")
+(asdf:defsystem "cl-llm-provider/test-all"
+  :author "quasi / quasiLabs"
+  :license "MIT"
+  :description "Runs the FiveAM suite and the fresh-image load-order test"
+  :in-order-to ((test-op (test-op "cl-llm-provider/test")
+                         (test-op "cl-llm-provider/load-order"))))
+
 (asdf:defsystem "cl-llm-provider/telos"
   :author "quasi / quasiLabs"
   :license "MIT"

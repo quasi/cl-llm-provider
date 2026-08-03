@@ -111,15 +111,15 @@ bridge=$(sbcl --noinform --disable-debugger --non-interactive \
   (handler-case
       (progn
         (let ((features (telos:list-features))
-              (members  (telos::feature-members (quote cl-llm-provider:tool-calling)))
+              (members  (telos:feature-members (quote cl-llm-provider:tool-calling)))
               ;; http-transport owns 11 define-condition/i forms; membership is
               ;; published per-kind, so assert a second kind independently.
-              (cond-members (telos::feature-members
+              (cond-members (telos:feature-members
                              (quote cl-llm-provider::http-transport)))
-              (decisions (telos::feature-decisions
+              (decisions (telos:feature-decisions
                           (quote cl-llm-provider::completion-api)))
-              (class-intent (gethash (quote cl-llm-provider:llm-provider)
-                                     telos::*class-intent-registry*)))
+              (class-intent (telos:entity-intent :class
+                                            (quote cl-llm-provider:llm-provider))))
           (format t "~&RESULT: ~a~%"
                   (cond ((null (member (quote cl-llm-provider:llm-provider) features))
                          "FAIL features not published")

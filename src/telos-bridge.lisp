@@ -27,20 +27,19 @@
 
 (in-package :cl-llm-provider.telos-bridge)
 
-;;; telos exposes no programmatic registration API — its registries are written
-;;; only by its macros — so the bridge reaches three internal symbols. Check them
-;;; once, at load, with a message that names the incompatibility. Without this a
-;;; telos rename surfaces as an undefined-function error mid-publication, which
-;;; is how the bug this whole change fixes used to present.
+;;; The bridge uses telos's public registration API exclusively — no telos::
+;;; internals. Check at load that this telos actually exports it, so an older
+;;; telos fails with a message naming the incompatibility rather than an
+;;; undefined-function error partway through publishing.
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (dolist (name '("REGISTER-FEATURE" "REGISTER-ENTITY-INTENT" "REGISTER-MEMBER"
-                  "REPLACE-FEATURE-DECISIONS" "CLASSIFY-SYMBOL-INTENT-TARGET"
-                  "*CLASS-INTENT-REGISTRY*"))
-    (let ((symbol (find-symbol name :telos)))
-      (unless (and symbol (or (fboundp symbol) (boundp symbol)))
-        (error "cl-llm-provider/telos needs TELOS::~A, which this telos does not ~
-                provide. The bridge is built against telos 1.2.x internals."
-               name)))))
+                  "REPLACE-FEATURE-DECISIONS" "CLASSIFY-SYMBOL-INTENT-TARGET"))
+    (multiple-value-bind (symbol status) (find-symbol name :telos)
+      (unless (and symbol (eq status :external) (fboundp symbol))
+        (error "cl-llm-provider/telos needs TELOS:~A to be external and fbound ~
+                (got ~S). Upgrade telos: the programmatic registration API was ~
+                added after 1.2.0."
+               name status)))))
 
 (defparameter *intent-keys*
   '(:purpose :goals :constraints :assumptions :failure-modes :verification
@@ -101,7 +100,7 @@
   "Replay a feature's :decisions into telos's separate decision registry."
   (let ((decisions (getf plist :decisions)))
     (when decisions
-      (telos::replace-feature-decisions
+      (telos:replace-feature-decisions
        name
        (mapcar (lambda (d)
                  (telos:make-decision :id (getf d :id)
@@ -118,7 +117,7 @@
   (loop for name in (cl-llm-provider.intent:list-features)
         sum (with-annotation-restart (name)
               (let ((plist (cl-llm-provider.intent:feature-intent name)))
-                (telos::register-feature name (plist-to-intent plist))
+                (telos:register-feature name (plist-to-intent plist))
                 (publish-decisions name plist)))))
 
 (defun resolve-kind (symbol)
@@ -131,19 +130,18 @@
   (case (cl-llm-provider.intent:intent-kind symbol)
     (:condition :condition)
     (:function :function)
-    (t (telos::classify-symbol-intent-target symbol))))
+    (t (telos:classify-symbol-intent-target symbol))))
 
 (defun publish-intent (symbol plist)
   "File one recorded intent in the right telos registry, and record it as a
-   member of its feature so TELOS:FEATURE-MEMBERS can find it."
-  (let ((kind (resolve-kind symbol))
-        (intent (plist-to-intent plist)))
-    ;; telos's defintent special-cases classes: they go in the class registry,
-    ;; not through register-entity-intent. Mirror that exactly.
-    (if (eq kind :class)
-        (setf (gethash symbol telos::*class-intent-registry*) intent)
-        (telos::register-entity-intent kind symbol intent))
-    (telos::register-member (getf plist :feature) symbol kind)))
+   member of its feature so TELOS:FEATURE-MEMBERS can find it.
+
+   Order matters: FEATURE-MEMBERS filters the member registry by each entity's
+   own intent, so registering the membership before the intent that names the
+   feature would leave the member silently filtered out."
+  (let ((kind (resolve-kind symbol)))
+    (telos:register-entity-intent kind symbol (plist-to-intent plist))
+    (telos:register-member (getf plist :feature) symbol kind)))
 
 (defun publish-intents ()
   "Register every defun/i, define-condition/i and defintent annotation with

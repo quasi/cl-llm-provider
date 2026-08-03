@@ -199,4 +199,34 @@ model and read exactly like the truth."
   :belongs-to llm-provider
   :goals ((:every-error-recoverable "Every error point offers at least one restart")
           (:agent-inspectable "Agents can list available restarts programmatically"))
-  :constraints ((:handler-bind-safe "Restarts visible through handler-bind, not destroyed by handler-case")))
+  :constraints ((:handler-bind-safe "Restarts visible through handler-bind, not destroyed by handler-case"))
+  :failure-modes ((:the-convenience-wrapper-reimplemented-failover-worse
+                   "WITH-AUTO-RECOVERY's :FALLBACK-PROVIDERS swapped
+*DEFAULT-PROVIDER* and re-ran the body — a second, weaker implementation of what
+USE-FALLBACK-PROVIDER already did. It could not change the model, so a body naming
+one (which a local endpoint forces, the name being the endpoint's own) sent it to
+the fallback; and it did nothing whatsoever for a body passing :PROVIDER
+explicitly, which is the shape a local-first caller writes. Re-running the body
+also repeated every side effect it had performed before the failure."
+                   :mitigation "The fallback branch invokes the restart, which is
+live: a HANDLER-BIND handler runs before unwinding, so COMPLETE's restart-case is
+still established. Entries may be (PROVIDER . MODEL); a bare provider still uses
+the one-argument form and keeps the caller's model, so same-model failover is
+unchanged. The *DEFAULT-PROVIDER* swap remains for bodies with no LLM call in
+scope, which have no restart to invoke."
+                   :violates :every-error-recoverable))
+  :decisions ((:id :fallback-delegates-to-the-restart
+               :chose "WITH-AUTO-RECOVERY invokes USE-FALLBACK-PROVIDER"
+               :over ("A dynamic override the body's explicit :MODEL loses to —
+which inverts the documented precedence explicit > provider > global, so an
+enclosing macro would outrank the call site"
+                      "Documenting that :FALLBACK-PROVIDERS requires a body naming
+no model — true, cheap, and leaves the footgun armed"
+                      "Deleting :FALLBACK-PROVIDERS — the restart does this
+correctly, but the same-model case works today and callers depend on it")
+               :because "One mechanism instead of two. The restart already handles
+the model correctly and reaches bodies that name :PROVIDER, which the swap never
+could. Cost, accepted and documented: on the fallback path the body is no longer
+re-executed. That is a behaviour change and also the better behaviour — side
+effects performed before the failure are no longer repeated."
+               :decided-by "quasi, 2026-08-04")))

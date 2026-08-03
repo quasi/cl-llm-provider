@@ -115,12 +115,23 @@ Corrections stick. If a handler fixes the name with `use-model` and the endpoint
 then dies, a later one-argument `use-fallback-provider` carries the *corrected*
 name to the fallback, not the one you started with.
 
-### Not `with-auto-recovery`, for this
+### `with-auto-recovery`, when you also want retries
 
-`with-auto-recovery`'s `:fallback-providers` swaps `*default-provider*` and re-runs
-the body. If the body names a model — and for a local endpoint it must — that
-model goes to the fallback and there is no way to change it. It is the right tool
-for retrying one service and the wrong one for crossing between two.
+If you want backoff and retries before the switch, the macro does the same thing
+declaratively. Name the model in the entry, for the same reason as above:
+
+```lisp
+(with-auto-recovery (:max-retries 3
+                     :fallback-providers (list (cons *cloud* "openai/gpt-oss-120b")))
+  (complete messages :provider *local* :model "gemma-4-26B-A4B-it-QAT-MLX-4bit"))
+```
+
+A bare entry — `(list *cloud*)` — keeps the caller's model, which is right only
+for the mirror case. The macro invokes the same restart, so the two forms mean
+exactly what they mean above.
+
+Retries re-execute the whole body; the fallback switch does not — it re-issues
+just the failing request, so side effects earlier in the body are not repeated.
 
 ## Choosing what to fail over on
 

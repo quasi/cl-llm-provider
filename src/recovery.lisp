@@ -149,6 +149,26 @@ Example:
 
 ;;; Auto-Recovery Macro
 
+(defun %fallback-entry (entry)
+  "Split a :FALLBACK-PROVIDERS entry into (values provider model model-supplied-p).
+
+ENTRY is a provider, or (PROVIDER . MODEL), or (PROVIDER MODEL). A provider is
+never a cons, so the two forms cannot be confused.
+
+MODEL-SUPPLIED-P is the whole point: it decides between the one-argument
+USE-FALLBACK-PROVIDER, which keeps the caller's model — correct for two endpoints
+serving the same one — and the two-argument form, which replaces it. A bare
+provider entry must stay on the one-argument path or every same-model failover
+changes behaviour with nothing to notice."
+  (if (consp entry)
+      (let ((tail (cdr entry)))
+        (if (null tail)
+            (values (car entry) nil nil)          ; (provider) — no model named
+            (values (car entry)
+                    (if (consp tail) (car tail) tail)
+                    t)))
+      (values entry nil nil)))
+
 (defmacro with-auto-recovery ((&key (max-retries 3)
                                      (backoff-base 1.0)
                                      fallback-providers
@@ -158,20 +178,30 @@ Example:
 
 MAX-RETRIES - maximum retry attempts before trying fallback (default 3)
 BACKOFF-BASE - base multiplier for exponential backoff in seconds (default 1.0)
-FALLBACK-PROVIDERS - list of providers to try if primary exhausts retries
+FALLBACK-PROVIDERS - list of entries to try if the primary exhausts retries.
+  Each entry is a provider, or (PROVIDER . MODEL) / (PROVIDER MODEL) to reach
+  that provider with a model of its own. NAME THE MODEL WHENEVER THE FALLBACK IS
+  A DIFFERENT SERVICE: a bare entry keeps the caller's model, which is right for
+  two endpoints serving the same one and wrong for every local->cloud switch,
+  since a local model name means nothing to a hosted provider.
 ON-RETRY - optional callback (lambda (condition attempt) ...) for each retry
 
 Recovery behavior:
   1. Rate limit -> wait retry-after or backoff, re-execute body
   2. Overloaded -> wait retry-after or backoff, re-execute body
   3. Network/timeout -> wait backoff, re-execute body
-  4. Retries exhausted + fallback providers -> switch *default-provider*, retry
+  4. Retries exhausted + fallback entries -> invoke the USE-FALLBACK-PROVIDER
+     restart with that provider and, when named, its model
   5. All options exhausted -> error propagates normally
 
-The macro re-executes BODY on each retry (not just the failing sub-call).
-Fallback providers are tried by rebinding *default-provider*, so they work
-with code that uses the default provider. Code that explicitly passes
-:provider will not be affected by fallback.
+RETRIES re-execute BODY. THE FALLBACK PATH DOES NOT: it invokes the restart
+COMPLETE established, so only the failing request is re-issued and the body's
+side effects are not repeated. This also means the fallback reaches a body that
+passes :PROVIDER explicitly, which a *DEFAULT-PROVIDER* swap never could.
+
+For a body with no LLM call in scope — one that signals an llm-provider-error
+itself — there is no restart to invoke, and the fallback path falls back to
+rebinding *default-provider* and re-executing BODY.
 
 CAVEAT: This macro installs an outermost handler-bind on llm-provider-error.
 Do NOT nest with-auto-recovery inside other handler-bind forms that handle
@@ -191,7 +221,7 @@ Example:
                                    (format t \"Retry ~D: ~A~%\" attempt e)))
     (complete messages))"
   (with-gensyms (retry-count max-r bb fallbacks on-retry-fn condition wait
-                 recovery-block retry-point)
+                 recovery-block retry-point fb-prov fb-model fb-model-p restart)
     `(let ((,retry-count 0)
            (,max-r ,max-retries)
            (,bb ,backoff-base)
@@ -217,11 +247,36 @@ Example:
                         (go ,retry-point))
                        ;; Retries exhausted, try fallback provider
                        (,fallbacks
-                        (setf *default-provider* (pop ,fallbacks))
-                        (setf ,retry-count 0)  ; reset retries for new provider
-                        (when ,on-retry-fn
-                          (funcall ,on-retry-fn ,condition 0))
-                        (go ,retry-point)))))))
+                        (multiple-value-bind (,fb-prov ,fb-model ,fb-model-p)
+                            (%fallback-entry (pop ,fallbacks))
+                          (setf ,retry-count 0)  ; reset retries for new provider
+                          (when ,on-retry-fn
+                            (funcall ,on-retry-fn ,condition 0))
+                          ;; PREFER THE RESTART. It is live here — a handler-bind
+                          ;; handler runs before any unwinding, so COMPLETE's
+                          ;; restart-case is still established — and it is where
+                          ;; the model handling already lives correctly.
+                          ;;
+                          ;; The *DEFAULT-PROVIDER* swap could never do this. It
+                          ;; cannot change the model, so a body naming one sent it
+                          ;; to the fallback; and it does nothing at all for a body
+                          ;; that passes :PROVIDER explicitly, which is exactly what
+                          ;; a local-first caller writes.
+                          ;;
+                          ;; ONE ARGUMENT FOR A BARE ENTRY, two for (provider .
+                          ;; model). The restart's own contract, unchanged: keep the
+                          ;; caller's model unless a replacement is named.
+                          (let ((,restart (find-restart 'use-fallback-provider ,condition)))
+                            (if ,restart
+                                (if ,fb-model-p
+                                    (invoke-restart ,restart ,fb-prov ,fb-model)
+                                    (invoke-restart ,restart ,fb-prov))
+                                ;; No LLM call in scope — a body that signalled the
+                                ;; condition itself. Swap the default and re-execute,
+                                ;; exactly as before.
+                                (progn
+                                  (setf *default-provider* ,fb-prov)
+                                  (go ,retry-point)))))))))))
              (return-from ,recovery-block (progn ,@body))))))))
 
 ;;; Telos Intent Annotations

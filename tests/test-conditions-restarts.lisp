@@ -1533,3 +1533,98 @@ model, which is the whole reason this test can see anything."
                  :model "the-callers-model"))
     (fiveam:is (equal "the-callers-model" (second (first *models-seen*)))
                "EMBEDDING's no-model failover keeps the caller's model")))
+
+;;;; ------------------------------------------------------------
+;;;; Section 9: WITH-AUTO-RECOVERY's fallback, which had the same defect
+;;;;
+;;;; :FALLBACK-PROVIDERS swapped *DEFAULT-PROVIDER* and re-ran the body. If the
+;;;; body named a model — and for a local endpoint it must, since the name is the
+;;;; endpoint's own — that model went to the fallback and nothing could change
+;;;; it. The same bug the restart was fixed for, one abstraction up, and worse:
+;;;; the macro also does nothing at all for a body that passes :PROVIDER
+;;;; explicitly, which is the shape a local-first caller writes.
+;;;;
+;;;; It now invokes the restart when one is live, which is where the model
+;;;; handling already lives correctly, and keeps the *DEFAULT-PROVIDER* swap for
+;;;; bodies that have no LLM call in scope.
+;;;; ------------------------------------------------------------
+
+(fiveam:test with-auto-recovery-fallback-can-carry-its-own-model
+  "A (PROVIDER . MODEL) ENTRY REACHES THE FALLBACK WITH ITS OWN MODEL.
+
+Before this, the body's explicit model travelled and the fallback answered 404 —
+or, where the body passed :PROVIDER explicitly as it does here, the macro's
+*DEFAULT-PROVIDER* swap did nothing whatsoever and the error simply propagated.
+
+DISCRIMINATING: the fallback REFUSES anything but its own model, so a swap that
+carried the caller's model over cannot pass by accident; and the body names
+:PROVIDER explicitly, so nothing but the restart can redirect it."
+  (let ((*models-seen* nil))
+    (let ((local (make-instance 'unreachable-test-provider :model "local-only-model"))
+          (cloud (make-instance 'model-recording-provider  :model "cloud-only-model")))
+      (let ((response
+              (with-auto-recovery (:max-retries 0 :backoff-base 0.0
+                                   :fallback-providers (list (cons cloud "cloud-only-model")))
+                (complete '((:role "user" :content "hi"))
+                          :provider local :model "local-only-model"))))
+        (fiveam:is (string= "ok" (response-content response))
+                   "the fallback served the request")
+        (fiveam:is (equal '("cloud-only-model" "cloud-only-model") (first *models-seen*))
+                   "and was asked for ITS OWN model, not the dead endpoint's")))))
+
+(fiveam:test with-auto-recovery-plain-fallback-keeps-the-callers-model
+  "THE CONTROL. A bare provider entry must behave as it always has.
+
+Two endpoints serving the same model is the case the no-model form exists for,
+and a fix that made every fallback prefer its own default would break it with
+nothing turning red. The mirror's own default is deliberately a DIFFERENT string
+from the caller's model, which is the only reason this test can see anything."
+  (let ((*models-seen* nil))
+    (let ((local  (make-instance 'unreachable-test-provider :model "the-callers-model"))
+          (mirror (make-instance 'permissive-recording-provider
+                                 :model "the-mirrors-own-default")))
+      (with-auto-recovery (:max-retries 0 :backoff-base 0.0
+                           :fallback-providers (list mirror))
+        (complete '((:role "user" :content "hi"))
+                  :provider local :model "the-callers-model"))
+      (fiveam:is (equal "the-callers-model" (second (first *models-seen*)))
+                 "a bare fallback entry keeps the caller's model, as it always has"))))
+
+(fiveam:test with-auto-recovery-re-issues-the-call-not-the-body
+  "WHEN A RESTART IS LIVE, ONLY THE FAILING CALL IS RE-ISSUED.
+
+The documented behaviour was 'the macro re-executes BODY on each retry', which
+duplicates every side effect the body performed before the failure. On the
+fallback path that is no longer true: the restart re-issues the request from
+inside COMPLETE and the body runs once.
+
+The RETRY path is unchanged and still re-executes the body — pinned by
+with-auto-recovery-retries-transient, which counts three body runs."
+  (let ((*models-seen* nil)
+        (body-runs 0))
+    (let ((local (make-instance 'unreachable-test-provider :model "m"))
+          (cloud (make-instance 'permissive-recording-provider :model "m")))
+      (with-auto-recovery (:max-retries 0 :backoff-base 0.0
+                           :fallback-providers (list (cons cloud "m")))
+        (incf body-runs)
+        (complete '((:role "user" :content "hi")) :provider local :model "m"))
+      (fiveam:is (= 1 body-runs)
+                 "the body ran once; the restart re-issued the request"))))
+
+(fiveam:test with-auto-recovery-without-a-restart-still-swaps-the-default
+  "THE OTHER HALF OF THE CONTRACT. A body with no LLM call in scope — anything
+that signals an llm-provider-error itself — has no restart to invoke, and must
+still get the *DEFAULT-PROVIDER* swap and a re-executed body. Deleting that
+branch would break every caller of the macro that does not go through COMPLETE."
+  (let ((seen nil)
+        (attempt 0))
+    (let ((*default-provider* (make-provider :ollama :model "primary")))
+      (with-auto-recovery (:max-retries 0 :backoff-base 0.0
+                           :fallback-providers (list (make-provider :ollama :model "fallback")))
+        (incf attempt)
+        (push (provider-default-model *default-provider*) seen)
+        (when (< attempt 2)
+          (error 'provider-network-error :message "fail"))))
+    (fiveam:is (= 2 attempt) "the body was re-executed, since no restart existed")
+    (fiveam:is (equal '("primary" "fallback") (reverse seen))
+               "and the fallback was installed as *default-provider*")))

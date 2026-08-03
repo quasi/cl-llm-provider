@@ -86,10 +86,38 @@ Full 15 rules, 7 invariants: `.claude/skills/integration/references/core-spec.md
 
 ## Testing Strategy
 
+```lisp
+(asdf:test-system "cl-llm-provider")            ; fast — FiveAM, one image, seconds
+(asdf:test-system "cl-llm-provider/load-order") ; slow — 9 fresh images, minutes
+(asdf:test-system "cl-llm-provider/test-all")   ; both
+```
+
 1. Unit tests — message normalization, token counting
 2. Provider tests — protocol implementation, request/response parsing
 3. Integration tests — multi-turn conversations, tool calling
 4. Error recovery tests — condition signaling, restart handling
+5. Load-order tests — `tests/test-load-order.sh`, fresh images, cold cache
+
+**RUN `cl-llm-provider/load-order` BEFORE MERGING OR RELEASING, and after
+touching any of `src/intent.lisp`, `src/telos-bridge.lisp`, `src/package.lisp`
+or `cl-llm-provider.asd`.** It is not chained into the fast suite because it
+spawns nine cold SBCL builds, and a slow default gets skipped.
+
+It guards a bug class the FiveAM suite *structurally cannot see*: a fasl whose
+validity depends on ambient state at compile time. Any in-image test runs in a
+process that has already loaded the system — the exact state that hides it. The
+previous instance (a shim that squatted the `telos` package) broke 2 of 4 load
+orders and, because `~/.cache/common-lisp` is shared across projects, poisoned
+builds in repos nobody had touched. See the header of `src/intent.lisp`.
+
+**Never investigate a fasl-cache problem from a long-lived image** (the `lisp`
+MCP server included) — loading the system there writes into the shared cache.
+Use a private one:
+
+```bash
+XDG_CACHE_HOME=$(mktemp -d) sbcl --noinform --non-interactive \
+  --eval '(asdf:test-system :cl-llm-provider)'
+```
 
 The suite stubs `provider-http-post`, so it verifies the JSON we *emit*, never
 that a provider *accepts* it. Wire-format changes need a live check.

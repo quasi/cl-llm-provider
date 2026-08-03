@@ -22,7 +22,7 @@
 (th.harness:define-harness :cl-llm-provider
   :systems (:fiveam :alexandria :serapeum :dexador :yason
             :bordeaux-threads :cl-ppcre :uiop)
-  :load ("src/telos-shim.lisp"
+  :load ("src/intent.lisp"
          "src/package.lisp"
          "src/features.lisp"
          "src/conditions.lisp"

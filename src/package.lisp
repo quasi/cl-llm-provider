@@ -1,7 +1,16 @@
 (in-package :cl-user)
 
 (defpackage :cl-llm-provider
-  (:use :cl :telos)
+  (:use :cl)
+  ;; Import only the four macros. :use would inherit the whole query API
+  ;; (get-intent, list-features, record-intent, ...) into this package, where a
+  ;; later same-named defun would shadow it with a style-warning only — the
+  ;; silent-collision shape that made the old :use :telos dangerous.
+  (:import-from :cl-llm-provider.intent
+                #:defun/i
+                #:define-condition/i
+                #:defintent
+                #:deffeature)
   (:import-from :alexandria
                 :if-let
                 :when-let

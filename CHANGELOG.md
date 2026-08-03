@@ -69,6 +69,27 @@ produce a document nobody could trust.
 
 ### Changed
 
+- **The telos shim is gone; annotations now live in `cl-llm-provider.intent`.**
+  `src/telos-shim.lisp` defined a stand-in `telos` package whenever the real
+  telos was absent. Whether it activated was ambient state, evaluated separately
+  at compile time and at load time, and the shim's macros expanded to shim-only
+  specials while the real telos's expand to `register-feature`/`make-intent`.
+  A fasl was therefore valid **only** in an image whose telos-presence matched
+  the one that compiled it: 2 of 4 compile/load orderings died with
+  `TELOS::*FEATURE-NAMES* is unbound` or `TELOS::MAKE-INTENT is undefined`.
+  Because ASDF's cache is shared across projects, building this library in one
+  repo could break an unrelated repo. `src/intent.lisp` replaces it with macros
+  that expand only to calls on functions in their own package, so load order
+  cannot matter. Regression test: `tests/test-load-order.sh`.
+
+  **Migration.** `cl-llm-provider` no longer occupies or requires the `telos`
+  package, so `(telos:get-intent 'cl-llm-provider:complete)` now returns `NIL`
+  rather than an intent — it fails silently, which is the one thing worth
+  checking for. Either query `cl-llm-provider.intent:get-intent` instead, or
+  load the new **`cl-llm-provider/telos`** system, which declares a real
+  dependency on telos and republishes every annotation into it — features,
+  their members, their decisions, and classes filed as classes.
+
 - **`with-auto-recovery` no longer re-executes the body on the fallback path.**
   It re-issues only the failing request, so side effects performed earlier in the
   body are no longer repeated. Retries still re-execute the body.
